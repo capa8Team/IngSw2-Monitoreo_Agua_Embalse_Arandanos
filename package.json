@@ -1,0 +1,26 @@
+{
+  "name": "arandanos-embalse-dashboard",
+  "description": "Dashboard de monitoreo de sensores en tiempo real para el Embalse Arándanos",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "author": "Equipo de Desarrollo",
+  "license": "PRIVATE",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs --fix --ignore-path .gitignore"
+  },
+  "dependencies": {
+    "vue": "^3.5.30"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.5",
+    "vite": "^8.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=7.0.0"
+  }
+}
