@@ -8,19 +8,31 @@
     </div>
     
     <div class="gauge-wrapper">
-      <DialGauge
+      <LinearGauge
+        :sensor-name="sensorName"
         :value="value"
-        :min="min"
-        :max="max"
+        :min-value="min"
+        :max-value="max"
         :unit="unit"
-        :size="240"
+        :width="450"
+        :height="150"
+        :major-ticks="majorTicks"
+        :minor-ticks="5"
+        :highlights="gaugeHighlights"
       />
     </div>
 
     <div class="sensor-info">
       <div class="info-row">
-        <span class="info-label">Rango seguro:</span>
-        <span class="info-value">{{ min.toFixed(1) }} - {{ safeMax.toFixed(1) }} {{ unit }}</span>
+        <span class="info-label">Rango verde:</span>
+        <span class="info-value">{{ normalizedThresholds.warningLow.toFixed(1) }} - {{ normalizedThresholds.warningHigh.toFixed(1) }} {{ unit }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Zona amarilla:</span>
+        <span class="info-value">
+          {{ normalizedThresholds.dangerLow.toFixed(1) }} - {{ normalizedThresholds.warningLow.toFixed(1) }}
+          / {{ normalizedThresholds.warningHigh.toFixed(1) }} - {{ normalizedThresholds.dangerHigh.toFixed(1) }} {{ unit }}
+        </span>
       </div>
       <div class="info-row">
         <span class="info-label">Última actualización:</span>
@@ -32,12 +44,17 @@
 
 <script setup>
 import { computed } from 'vue'
-import DialGauge from './DialGauge.vue'
+import LinearGauge from './LinearGauge.vue'
 
 const props = defineProps({
   sensorName: {
     type: String,
     required: true
+  },
+  sensorType: {
+    type: String,
+    default: 'temperature',
+    validator: (value) => ['temperature', 'ph', 'conductivity'].includes(value)
   },
   value: {
     type: Number,
@@ -51,9 +68,9 @@ const props = defineProps({
     type: Number,
     required: true
   },
-  safeMax: {
-    type: Number,
-    required: true
+  thresholds: {
+    type: Object,
+    default: null
   },
   unit: {
     type: String,
@@ -65,23 +82,83 @@ const props = defineProps({
   }
 })
 
-const percentage = computed(() => {
-  const clipped = Math.max(props.min, Math.min(props.max, props.value))
-  return ((clipped - props.min) / (props.max - props.min)) * 100
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
+
+const buildFallbackThresholds = () => {
+  const range = props.max - props.min
+  return {
+    dangerLow: props.min + range * 0.15,
+    warningLow: props.min + range * 0.35,
+    warningHigh: props.min + range * 0.65,
+    dangerHigh: props.min + range * 0.85
+  }
+}
+
+const normalizedThresholds = computed(() => {
+  const fallback = buildFallbackThresholds()
+
+  const values = [
+    Number(props.thresholds?.dangerLow ?? fallback.dangerLow),
+    Number(props.thresholds?.warningLow ?? fallback.warningLow),
+    Number(props.thresholds?.warningHigh ?? fallback.warningHigh),
+    Number(props.thresholds?.dangerHigh ?? fallback.dangerHigh)
+  ]
+    .map((value) => Number.isFinite(value) ? clamp(value, props.min, props.max) : props.min)
+    .sort((first, second) => first - second)
+
+  return {
+    dangerLow: values[0],
+    warningLow: values[1],
+    warningHigh: values[2],
+    dangerHigh: values[3]
+  }
 })
 
 const statusClass = computed(() => {
-  const pct = percentage.value
-  if (pct < 15 || pct > 85) return 'danger'
-  if (pct < 35 || pct > 65) return 'warning'
+  const currentValue = clamp(props.value, props.min, props.max)
+  if (currentValue <= normalizedThresholds.value.dangerLow || currentValue >= normalizedThresholds.value.dangerHigh) return 'danger'
+  if (currentValue <= normalizedThresholds.value.warningLow || currentValue >= normalizedThresholds.value.warningHigh) return 'warning'
   return 'safe'
 })
 
 const statusText = computed(() => {
-  const pct = percentage.value
-  if (pct < 15 || pct > 85) return 'Peligroso'
-  if (pct < 35 || pct > 65) return 'Advertencia'
+  const currentValue = clamp(props.value, props.min, props.max)
+  if (currentValue <= normalizedThresholds.value.dangerLow || currentValue >= normalizedThresholds.value.dangerHigh) return 'Peligroso'
+  if (currentValue <= normalizedThresholds.value.warningLow || currentValue >= normalizedThresholds.value.warningHigh) return 'Advertencia'
   return 'Estable'
+})
+
+const majorTicks = computed(() => {
+  const range = props.max - props.min
+  const step = range / 10
+  const ticks = []
+  for (let i = 0; i <= 10; i++) {
+    ticks.push(parseFloat((props.min + i * step).toFixed(2)))
+  }
+  return ticks
+})
+
+const gaugeHighlights = computed(() => {
+  const thresholds = normalizedThresholds.value
+
+  // Para temperatura: azul en extremo frío, para pH y conductividad: rojo en ambos extremos
+  if (props.sensorType === 'temperature') {
+    return [
+      { from: props.min, to: thresholds.dangerLow, color: 'rgba(0, 0, 255, 0.25)' },
+      { from: thresholds.dangerLow, to: thresholds.warningLow, color: 'rgba(255, 193, 7, 0.25)' },
+      { from: thresholds.warningLow, to: thresholds.warningHigh, color: 'rgba(76, 175, 80, 0.25)' },
+      { from: thresholds.warningHigh, to: thresholds.dangerHigh, color: 'rgba(255, 193, 7, 0.25)' },
+      { from: thresholds.dangerHigh, to: props.max, color: 'rgba(255, 0, 0, 0.25)' }
+    ]
+  } else {
+    return [
+      { from: props.min, to: thresholds.dangerLow, color: 'rgba(255, 0, 0, 0.25)' },
+      { from: thresholds.dangerLow, to: thresholds.warningLow, color: 'rgba(255, 193, 7, 0.25)' },
+      { from: thresholds.warningLow, to: thresholds.warningHigh, color: 'rgba(76, 175, 80, 0.25)' },
+      { from: thresholds.warningHigh, to: thresholds.dangerHigh, color: 'rgba(255, 193, 7, 0.25)' },
+      { from: thresholds.dangerHigh, to: props.max, color: 'rgba(255, 0, 0, 0.25)' }
+    ]
+  }
 })
 </script>
 
