@@ -30,7 +30,7 @@
           :value="sensors.ph.value"
           :min="sensors.ph.min"
           :max="sensors.ph.max"
-          :safe-max="sensors.ph.safeMax"
+          :thresholds="sensors.ph.thresholds"
           unit="pH"
           :last-updated="sensors.ph.lastUpdated"
         />
@@ -41,7 +41,7 @@
           :value="sensors.temperature.value"
           :min="sensors.temperature.min"
           :max="sensors.temperature.max"
-          :safe-max="sensors.temperature.safeMax"
+          :thresholds="sensors.temperature.thresholds"
           unit="°C"
           :last-updated="sensors.temperature.lastUpdated"
         />
@@ -52,11 +52,75 @@
           :value="sensors.conductivity.value"
           :min="sensors.conductivity.min"
           :max="sensors.conductivity.max"
-          :safe-max="sensors.conductivity.safeMax"
+          :thresholds="sensors.conductivity.thresholds"
           unit="µS/cm"
           :last-updated="sensors.conductivity.lastUpdated"
         />
       </div>
+
+      <section class="criteria-section">
+        <h2 class="section-title">Criterios de Colores del Gráfico</h2>
+        <p class="criteria-subtitle">Ajusta límites para zonas verdes, amarillas y extremos críticos por sensor.</p>
+
+        <div class="criteria-grid">
+          <div
+            v-for="(sensor, key) in sensors"
+            :key="key"
+            class="criteria-card"
+          >
+            <h3 class="criteria-card-title">{{ getSensorDisplayName(key) }}</h3>
+            <div class="criteria-inputs">
+              <label class="criteria-field">
+                <span>Extremo bajo</span>
+                <input
+                  v-model.number="sensor.thresholds.dangerLow"
+                  type="number"
+                  :step="getInputStep(sensor.min, sensor.max)"
+                  :min="sensor.min"
+                  :max="sensor.max"
+                  @change="sanitizeThresholdsForSensor(key)"
+                />
+              </label>
+
+              <label class="criteria-field">
+                <span>Inicio verde</span>
+                <input
+                  v-model.number="sensor.thresholds.warningLow"
+                  type="number"
+                  :step="getInputStep(sensor.min, sensor.max)"
+                  :min="sensor.min"
+                  :max="sensor.max"
+                  @change="sanitizeThresholdsForSensor(key)"
+                />
+              </label>
+
+              <label class="criteria-field">
+                <span>Fin verde</span>
+                <input
+                  v-model.number="sensor.thresholds.warningHigh"
+                  type="number"
+                  :step="getInputStep(sensor.min, sensor.max)"
+                  :min="sensor.min"
+                  :max="sensor.max"
+                  @change="sanitizeThresholdsForSensor(key)"
+                />
+              </label>
+
+              <label class="criteria-field">
+                <span>Extremo alto</span>
+                <input
+                  v-model.number="sensor.thresholds.dangerHigh"
+                  type="number"
+                  :step="getInputStep(sensor.min, sensor.max)"
+                  :min="sensor.min"
+                  :max="sensor.max"
+                  @change="sanitizeThresholdsForSensor(key)"
+                />
+              </label>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section class="info-section">
         <h2 class="section-title">Información del Sistema</h2>
@@ -90,6 +154,23 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import DeviceList from './components/DeviceList.vue'
 import SensorCard from './components/SensorCard.vue'
 
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
+
+const roundTo = (value, decimals = 2) => {
+  const power = 10 ** decimals
+  return Math.round(value * power) / power
+}
+
+const buildDefaultThresholds = (min, max) => {
+  const range = max - min
+  return {
+    dangerLow: roundTo(min + range * 0.15),
+    warningLow: roundTo(min + range * 0.35),
+    warningHigh: roundTo(min + range * 0.65),
+    dangerHigh: roundTo(min + range * 0.85)
+  }
+}
+
 // Estado de navegación
 const currentView = ref('devices') // 'devices' o 'dashboard'
 
@@ -105,21 +186,21 @@ const sensors = ref({
     value: 7.2,
     min: 6.0,
     max: 8.5,
-    safeMax: 8.0,
+    thresholds: buildDefaultThresholds(6.0, 8.5),
     lastUpdated: 'hace 2s'
   },
   temperature: {
     value: 22.5,
     min: 5,
     max: 35,
-    safeMax: 28,
+    thresholds: buildDefaultThresholds(5, 35),
     lastUpdated: 'hace 3s'
   },
   conductivity: {
     value: 650,
     min: 100,
     max: 2000,
-    safeMax: 1500,
+    thresholds: buildDefaultThresholds(100, 2000),
     lastUpdated: 'hace 1s'
   }
 })
@@ -127,11 +208,56 @@ const sensors = ref({
 const lastSync = ref('hace 10 segundos')
 const arduinoConnected = ref(true)
 
+const getStatus = (value, min, max, thresholds) => {
+  const clampedValue = clamp(value, min, max)
+  if (clampedValue <= thresholds.dangerLow || clampedValue >= thresholds.dangerHigh) return 'danger'
+  if (clampedValue <= thresholds.warningLow || clampedValue >= thresholds.warningHigh) return 'warning'
+  return 'safe'
+}
+
+const sanitizeThresholds = (sensor) => {
+  const min = sensor.min
+  const max = sensor.max
+  const rawValues = [
+    Number(sensor.thresholds.dangerLow),
+    Number(sensor.thresholds.warningLow),
+    Number(sensor.thresholds.warningHigh),
+    Number(sensor.thresholds.dangerHigh)
+  ]
+
+  const normalized = rawValues
+    .map((value) => Number.isFinite(value) ? clamp(value, min, max) : min)
+    .sort((first, second) => first - second)
+
+  sensor.thresholds.dangerLow = roundTo(normalized[0])
+  sensor.thresholds.warningLow = roundTo(normalized[1])
+  sensor.thresholds.warningHigh = roundTo(normalized[2])
+  sensor.thresholds.dangerHigh = roundTo(normalized[3])
+}
+
+const sanitizeThresholdsForSensor = (sensorKey) => {
+  sanitizeThresholds(sensors.value[sensorKey])
+}
+
+const getInputStep = (min, max) => {
+  const range = max - min
+  if (range <= 20) return 0.1
+  if (range <= 200) return 1
+  return 10
+}
+
+const getSensorDisplayName = (sensorKey) => {
+  if (sensorKey === 'ph') return 'pH'
+  if (sensorKey === 'temperature') return 'Temperatura'
+  if (sensorKey === 'conductivity') return 'Conductividad Eléctrica'
+  return sensorKey
+}
+
 const overallStatus = computed(() => {
   const statuses = [
-    getStatus(sensors.value.ph.value, sensors.value.ph.min, sensors.value.ph.max, sensors.value.ph.safeMax),
-    getStatus(sensors.value.temperature.value, sensors.value.temperature.min, sensors.value.temperature.max, sensors.value.temperature.safeMax),
-    getStatus(sensors.value.conductivity.value, sensors.value.conductivity.min, sensors.value.conductivity.max, sensors.value.conductivity.safeMax)
+    getStatus(sensors.value.ph.value, sensors.value.ph.min, sensors.value.ph.max, sensors.value.ph.thresholds),
+    getStatus(sensors.value.temperature.value, sensors.value.temperature.min, sensors.value.temperature.max, sensors.value.temperature.thresholds),
+    getStatus(sensors.value.conductivity.value, sensors.value.conductivity.min, sensors.value.conductivity.max, sensors.value.conductivity.thresholds)
   ]
   
   if (statuses.includes('danger')) return 'danger'
@@ -144,13 +270,6 @@ const overallStatusText = computed(() => {
   if (overallStatus.value === 'warning') return 'Advertencia'
   return 'Sistema Normal'
 })
-
-const getStatus = (value, min, max, safeMax) => {
-  const percentage = ((value - min) / (max - min)) * 100
-  if (percentage < 15 || percentage > 85) return 'danger'
-  if (percentage < 35 || percentage > 65) return 'warning'
-  return 'safe'
-}
 
 // Métodos de navegación
 const selectDevice = (device) => {
@@ -174,6 +293,10 @@ const selectDevice = (device) => {
   
   startSensorUpdates()
 }
+
+Object.keys(sensors.value).forEach((sensorKey) => {
+  sanitizeThresholdsForSensor(sensorKey)
+})
 
 const goBack = () => {
   currentView.value = 'devices'
@@ -336,6 +459,73 @@ onUnmounted(() => {
   margin-bottom: 40px;
 }
 
+.criteria-section {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 28px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border: 1px solid #e8e8e8;
+  margin-bottom: 24px;
+}
+
+.criteria-subtitle {
+  margin: -8px 0 20px 0;
+  color: #666;
+  font-size: 14px;
+}
+
+.criteria-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.criteria-card {
+  background: #f8f9fa;
+  border: 1px solid #e6e8eb;
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.criteria-card-title {
+  margin: 0 0 14px;
+  font-size: 15px;
+  color: #2f2f2f;
+}
+
+.criteria-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.criteria-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.criteria-field span {
+  color: #666;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.criteria-field input {
+  border: 1px solid #d4d8de;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: #333;
+  background: #fff;
+}
+
+.criteria-field input:focus {
+  outline: none;
+  border-color: #66bb6a;
+  box-shadow: 0 0 0 3px rgba(102, 187, 106, 0.15);
+}
+
 .info-section {
   background: #ffffff;
   border-radius: 12px;
@@ -451,6 +641,14 @@ onUnmounted(() => {
 
   .info-section {
     padding: 20px;
+  }
+
+  .criteria-section {
+    padding: 20px;
+  }
+
+  .criteria-inputs {
+    grid-template-columns: 1fr;
   }
 
   .dashboard-footer {

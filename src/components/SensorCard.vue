@@ -24,8 +24,15 @@
 
     <div class="sensor-info">
       <div class="info-row">
-        <span class="info-label">Rango seguro:</span>
-        <span class="info-value">{{ min.toFixed(1) }} - {{ safeMax.toFixed(1) }} {{ unit }}</span>
+        <span class="info-label">Rango verde:</span>
+        <span class="info-value">{{ normalizedThresholds.warningLow.toFixed(1) }} - {{ normalizedThresholds.warningHigh.toFixed(1) }} {{ unit }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Zona amarilla:</span>
+        <span class="info-value">
+          {{ normalizedThresholds.dangerLow.toFixed(1) }} - {{ normalizedThresholds.warningLow.toFixed(1) }}
+          / {{ normalizedThresholds.warningHigh.toFixed(1) }} - {{ normalizedThresholds.dangerHigh.toFixed(1) }} {{ unit }}
+        </span>
       </div>
       <div class="info-row">
         <span class="info-label">Última actualización:</span>
@@ -61,9 +68,9 @@ const props = defineProps({
     type: Number,
     required: true
   },
-  safeMax: {
-    type: Number,
-    required: true
+  thresholds: {
+    type: Object,
+    default: null
   },
   unit: {
     type: String,
@@ -75,22 +82,49 @@ const props = defineProps({
   }
 })
 
-const percentage = computed(() => {
-  const clipped = Math.max(props.min, Math.min(props.max, props.value))
-  return ((clipped - props.min) / (props.max - props.min)) * 100
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
+
+const buildFallbackThresholds = () => {
+  const range = props.max - props.min
+  return {
+    dangerLow: props.min + range * 0.15,
+    warningLow: props.min + range * 0.35,
+    warningHigh: props.min + range * 0.65,
+    dangerHigh: props.min + range * 0.85
+  }
+}
+
+const normalizedThresholds = computed(() => {
+  const fallback = buildFallbackThresholds()
+
+  const values = [
+    Number(props.thresholds?.dangerLow ?? fallback.dangerLow),
+    Number(props.thresholds?.warningLow ?? fallback.warningLow),
+    Number(props.thresholds?.warningHigh ?? fallback.warningHigh),
+    Number(props.thresholds?.dangerHigh ?? fallback.dangerHigh)
+  ]
+    .map((value) => Number.isFinite(value) ? clamp(value, props.min, props.max) : props.min)
+    .sort((first, second) => first - second)
+
+  return {
+    dangerLow: values[0],
+    warningLow: values[1],
+    warningHigh: values[2],
+    dangerHigh: values[3]
+  }
 })
 
 const statusClass = computed(() => {
-  const pct = percentage.value
-  if (pct < 15 || pct > 85) return 'danger'
-  if (pct < 35 || pct > 65) return 'warning'
+  const currentValue = clamp(props.value, props.min, props.max)
+  if (currentValue <= normalizedThresholds.value.dangerLow || currentValue >= normalizedThresholds.value.dangerHigh) return 'danger'
+  if (currentValue <= normalizedThresholds.value.warningLow || currentValue >= normalizedThresholds.value.warningHigh) return 'warning'
   return 'safe'
 })
 
 const statusText = computed(() => {
-  const pct = percentage.value
-  if (pct < 15 || pct > 85) return 'Peligroso'
-  if (pct < 35 || pct > 65) return 'Advertencia'
+  const currentValue = clamp(props.value, props.min, props.max)
+  if (currentValue <= normalizedThresholds.value.dangerLow || currentValue >= normalizedThresholds.value.dangerHigh) return 'Peligroso'
+  if (currentValue <= normalizedThresholds.value.warningLow || currentValue >= normalizedThresholds.value.warningHigh) return 'Advertencia'
   return 'Estable'
 })
 
@@ -105,34 +139,24 @@ const majorTicks = computed(() => {
 })
 
 const gaugeHighlights = computed(() => {
+  const thresholds = normalizedThresholds.value
+
   // Para temperatura: azul en extremo frío, para pH y conductividad: rojo en ambos extremos
   if (props.sensorType === 'temperature') {
-    // Temperatura: Azul (crítico bajo) | Amarillo (advertencia) | Verde (SAFE) | Amarillo (advertencia) | Rojo (crítico alto)
-    const seg1 = props.min + (props.safeMax - props.min) * 0.15        // Límite azul-amarillo
-    const seg2 = props.min + (props.safeMax - props.min) * 0.35        // Límite amarillo-verde
-    const safeEnd = props.safeMax                                      // Fin de la zona segura
-    const seg3 = props.safeMax + (props.max - props.safeMax) * 0.5     // Límite amarillo-rojo
-
     return [
-      { from: props.min, to: seg1, color: 'rgba(0, 0, 255, 0.25)' },          // Azul (Frío - crítico)
-      { from: seg1, to: seg2, color: 'rgba(255, 193, 7, 0.25)' },             // Amarillo (Advertencia baja)
-      { from: seg2, to: safeEnd, color: 'rgba(76, 175, 80, 0.25)' },          // Verde (SAFE - rango seguro)
-      { from: safeEnd, to: seg3, color: 'rgba(255, 193, 7, 0.25)' },          // Amarillo (Advertencia alta)
-      { from: seg3, to: props.max, color: 'rgba(255, 0, 0, 0.25)' }           // Rojo (Calor - crítico)
+      { from: props.min, to: thresholds.dangerLow, color: 'rgba(0, 0, 255, 0.25)' },
+      { from: thresholds.dangerLow, to: thresholds.warningLow, color: 'rgba(255, 193, 7, 0.25)' },
+      { from: thresholds.warningLow, to: thresholds.warningHigh, color: 'rgba(76, 175, 80, 0.25)' },
+      { from: thresholds.warningHigh, to: thresholds.dangerHigh, color: 'rgba(255, 193, 7, 0.25)' },
+      { from: thresholds.dangerHigh, to: props.max, color: 'rgba(255, 0, 0, 0.25)' }
     ]
   } else {
-    // pH y Conductividad: Rojo (crítico bajo) | Amarillo (advertencia) | Verde (SAFE) | Amarillo (advertencia) | Rojo (crítico alto)
-    const seg1 = props.min + (props.safeMax - props.min) * 0.15        // Límite rojo-amarillo
-    const seg2 = props.min + (props.safeMax - props.min) * 0.35        // Límite amarillo-verde
-    const safeEnd = props.safeMax                                      // Fin de la zona segura
-    const seg3 = props.safeMax + (props.max - props.safeMax) * 0.5     // Límite amarillo-rojo
-
     return [
-      { from: props.min, to: seg1, color: 'rgba(255, 0, 0, 0.25)' },          // Rojo (Bajo - crítico)
-      { from: seg1, to: seg2, color: 'rgba(255, 193, 7, 0.25)' },             // Amarillo (Advertencia baja)
-      { from: seg2, to: safeEnd, color: 'rgba(76, 175, 80, 0.25)' },          // Verde (SAFE - rango seguro)
-      { from: safeEnd, to: seg3, color: 'rgba(255, 193, 7, 0.25)' },          // Amarillo (Advertencia alta)
-      { from: seg3, to: props.max, color: 'rgba(255, 0, 0, 0.25)' }           // Rojo (Alto - crítico)
+      { from: props.min, to: thresholds.dangerLow, color: 'rgba(255, 0, 0, 0.25)' },
+      { from: thresholds.dangerLow, to: thresholds.warningLow, color: 'rgba(255, 193, 7, 0.25)' },
+      { from: thresholds.warningLow, to: thresholds.warningHigh, color: 'rgba(76, 175, 80, 0.25)' },
+      { from: thresholds.warningHigh, to: thresholds.dangerHigh, color: 'rgba(255, 193, 7, 0.25)' },
+      { from: thresholds.dangerHigh, to: props.max, color: 'rgba(255, 0, 0, 0.25)' }
     ]
   }
 })
