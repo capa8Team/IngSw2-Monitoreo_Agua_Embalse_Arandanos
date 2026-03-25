@@ -310,6 +310,8 @@ const historyFilters = ref({
   deviceId: 'all',
   date: 'all'
 })
+const lastTelegramAlertByDevice = new Map()
+const TELEGRAM_ALERT_COOLDOWN_MS = 60000
 
 const getStatus = (value, min, max) => {
   const percentage = ((value - min) / (max - min)) * 100
@@ -359,7 +361,6 @@ const createRecord = (device) => {
     temperature < SENSOR_LIMITS.temperature.min || temperature > SENSOR_LIMITS.temperature.max ||
     conductivity < SENSOR_LIMITS.conductivity.min || conductivity > SENSOR_LIMITS.conductivity.max
 
-  const statuses = ['enviado', 'recibido', 'fallo']
   return {
     id: `${device.id}-${now.getTime()}-${Math.random().toString(16).slice(2, 8)}`,
     deviceId: device.id,
@@ -371,9 +372,65 @@ const createRecord = (device) => {
     date: formatDate(now),
     time: formatTime(now),
     timestamp: now.getTime(),
-    telegramStatus: statuses[Math.floor(Math.random() * statuses.length)],
-    emailStatus: statuses[Math.floor(Math.random() * statuses.length)],
+    telegramStatus: isAlert ? 'pendiente' : 'sin alerta',
+    emailStatus: 'no implementado',
     isAlert
+  }
+}
+
+const updateRecordTelegramStatus = (recordId, status) => {
+  const index = historyRecords.value.findIndex((record) => record.id === recordId)
+  if (index === -1) return
+  historyRecords.value[index] = {
+    ...historyRecords.value[index],
+    telegramStatus: status
+  }
+}
+
+const sendTelegramNotification = async (record) => {
+  const lastSent = lastTelegramAlertByDevice.get(record.deviceId) || 0
+  const now = Date.now()
+  if (now - lastSent < TELEGRAM_ALERT_COOLDOWN_MS) {
+    updateRecordTelegramStatus(record.id, 'omitido (cooldown)')
+    return
+  }
+
+  try {
+    const response = await fetch('/api/notify-sensor-alert', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        deviceName: record.deviceName,
+        ph: record.ph,
+        temperature: record.temperature,
+        conductivity: record.conductivity,
+        date: record.date,
+        time: record.time
+      })
+    })
+
+    if (!response.ok) {
+      updateRecordTelegramStatus(record.id, 'fallo')
+      return
+    }
+
+    const body = await response.json()
+    if (body.status === 'ok' && body.sent > 0) {
+      lastTelegramAlertByDevice.set(record.deviceId, now)
+      updateRecordTelegramStatus(record.id, 'enviado')
+      return
+    }
+
+    if (body.reason === 'no-subscribed-chats') {
+      updateRecordTelegramStatus(record.id, 'sin suscriptores')
+      return
+    }
+
+    updateRecordTelegramStatus(record.id, 'omitido')
+  } catch (_) {
+    updateRecordTelegramStatus(record.id, 'fallo')
   }
 }
 
@@ -558,6 +615,9 @@ const updateSensorData = () => {
 
   const newRecord = createRecord(device)
   historyRecords.value.push(newRecord)
+  if (newRecord.isAlert) {
+    sendTelegramNotification(newRecord)
+  }
   lastSync.value = `hace ${Math.floor(Math.random() * 12) + 1}s`
 }
 
