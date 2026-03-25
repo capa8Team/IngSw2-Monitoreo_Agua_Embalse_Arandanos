@@ -7,10 +7,12 @@ from typing import Any
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
+from dotenv import load_dotenv
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
 
 app = FastAPI()
+load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 DIST_DIR = BASE_DIR / "dist"
@@ -18,8 +20,11 @@ DIST_DIR = BASE_DIR / "dist"
 if DIST_DIR.exists():
     app.mount("/webapp", StaticFiles(directory=str(DIST_DIR), html=True), name="webapp")
 
-# Configure with environment variables when available.
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8744757844:AAGWn_DJtMf7wMDng4IgYHrrcH-HgdjH364")
+# Configure with environment variables only.
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+if not TOKEN:
+    raise RuntimeError("TELEGRAM_BOT_TOKEN no esta configurado en variables de entorno.")
+
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://budgetary-hunter-overdramatically.ngrok-free.dev")
 WEBAPP_URL = os.getenv("WEBAPP_URL", f"{PUBLIC_BASE_URL}/webapp/")
 
