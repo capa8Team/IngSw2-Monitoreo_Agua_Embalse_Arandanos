@@ -26,3 +26,4 @@ dist-ssr
 # Python cache artifacts
 __pycache__/
 *.py[cod]
+.env

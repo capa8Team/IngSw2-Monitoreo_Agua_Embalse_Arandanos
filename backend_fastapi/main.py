@@ -183,22 +183,19 @@ def send_mailersend_notification(device_name: str, sensor: str, medicion: str, n
     logger.info(f"Enviando alerta por email: {device_name} - {sensor}")
 
     message = build_alert_message(device_name, sensor, medicion, now)
-    
     payload = {
         "from": {
             "email": config.from_email,
             "name": config.from_name,
         },
         "to": [{"email": email} for email in config.to_emails],
-        "subject": "Alerta: dato fuera de rango",
-        "html": f"<pre>{message}</pre>",
+        "subject": f"⚠️ Alerta: {sensor} fuera de rango - {device_name}",
+        "text": message,
     }
     headers = {
         "Authorization": f"Bearer {config.api_token}",
         "Content-Type": "application/json",
     }
-
-    logger.debug(f"Payload enviado a MailerSend: {payload}")
 
     try:
         response = requests.post(
@@ -207,11 +204,11 @@ def send_mailersend_notification(device_name: str, sensor: str, medicion: str, n
             headers=headers,
             timeout=10,
         )
-        
+
         if response.status_code != 200:
             logger.error(f"Respuesta MailerSend: {response.status_code} - {response.text}")
             response.raise_for_status()
-        
+
         logger.info(f"Email enviado exitosamente a {config.to_emails}")
     except requests.RequestException as exc:
         logger.error(f"Error enviando email: {exc}")
