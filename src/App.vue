@@ -237,6 +237,7 @@
 import { ref, computed, onUnmounted } from 'vue'
 import DeviceList from './components/DeviceList.vue'
 import SensorCard from './components/SensorCard.vue'
+import { checkAndSendAlerts } from './services/AlertService.js'
 
 const ALERT_TABLE_LIMIT = 20
 const SENSOR_LIMITS = {
@@ -541,7 +542,9 @@ const goBack = () => {
 }
 
 let updateInterval = null
-const updateSensorData = () => {
+const lastAlertTimestamp = ref({})
+
+const updateSensorData = async () => {
   if (!selectedDeviceId.value) return
   const index = devices.value.findIndex((device) => device.id === selectedDeviceId.value)
   if (index === -1) return
@@ -559,6 +562,18 @@ const updateSensorData = () => {
   const newRecord = createRecord(device)
   historyRecords.value.push(newRecord)
   lastSync.value = `hace ${Math.floor(Math.random() * 12) + 1}s`
+
+  // Enviar alertas al backend si hay mediciones fuera de rango
+  if (newRecord.isAlert) {
+    const now = Date.now()
+    const lastTime = lastAlertTimestamp.value[device.id] || 0
+    
+    // Evitar enviar la misma alerta dos veces en menos de 30 segundos
+    if (now - lastTime > 30000) {
+      await checkAndSendAlerts(device, SENSOR_LIMITS)
+      lastAlertTimestamp.value[device.id] = now
+    }
+  }
 }
 
 const startSensorUpdates = () => {
