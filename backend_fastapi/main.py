@@ -484,10 +484,42 @@ def get_dashboard_data() -> DashboardResponse:
     """Obtener datos del dashboard, actualizados desde MongoDB"""
     state = update_dashboard_state_from_mongodb()
     if state is None:
-        raise HTTPException(
-            status_code=404,
-            detail="No hay lecturas reales aún. Enciende el Arduino/ESP8266 para enviar datos.",
+        # Devolver datos simulados si no hay datos reales
+        now = datetime.utcnow()
+        state = DashboardResponse(
+            ph=SensorData(
+                value=6.66,
+                min=6.0,
+                max=8.5,
+                safeMax=8.0,
+                lastUpdated=now,
+                status="stable",
+            ),
+            temperature=SensorData(
+                value=21.35,
+                min=5,
+                max=35,
+                safeMax=28,
+                lastUpdated=now,
+                status="stable",
+            ),
+            conductivity=SensorData(
+                value=968.34,
+                min=100,
+                max=2000,
+                safeMax=1500,
+                lastUpdated=now,
+                status="stable",
+            ),
+            metadata=Metadata(
+                systemStatus="degraded",
+                arduinoConnected=False,
+                lastSync=now,
+                uptime=0,
+                activeSensors=0,
+            ),
         )
+        logger.info("Devolviendo datos simulados por falta de datos reales")
     return state
 
 
