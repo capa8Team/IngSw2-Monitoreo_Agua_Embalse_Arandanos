@@ -76,6 +76,37 @@
         </div>
       </section>
 
+      <section class="diagnostics-section">
+        <div class="alerts-header">
+          <h2 class="section-title">Diagnóstico de solicitudes (tiempo real)</h2>
+          <span class="alerts-count">Actualiza cada 5s</span>
+        </div>
+        <div class="diagnostics-grid">
+          <div class="diagnostic-card">
+            <div class="diagnostic-title">Dashboard (/api/dashboard)</div>
+            <div class="diagnostic-row"><span>Intentos</span><strong>{{ requestMonitor.dashboard.attempts }}</strong></div>
+            <div class="diagnostic-row"><span>Exitosas</span><strong>{{ requestMonitor.dashboard.ok }}</strong></div>
+            <div class="diagnostic-row"><span>Errores</span><strong>{{ requestMonitor.dashboard.error }}</strong></div>
+            <div class="diagnostic-row"><span>Estado</span><strong>{{ requestMonitor.dashboard.lastStatus }}</strong></div>
+            <div class="diagnostic-row"><span>Ultimo dato</span><strong>{{ requestMonitor.dashboard.lastSuccessAt }}</strong></div>
+          </div>
+          <div class="diagnostic-card">
+            <div class="diagnostic-title">Historial (/api/sensors/history)</div>
+            <div class="diagnostic-row"><span>Intentos</span><strong>{{ requestMonitor.history.attempts }}</strong></div>
+            <div class="diagnostic-row"><span>Exitosas</span><strong>{{ requestMonitor.history.ok }}</strong></div>
+            <div class="diagnostic-row"><span>Errores</span><strong>{{ requestMonitor.history.error }}</strong></div>
+            <div class="diagnostic-row"><span>Estado</span><strong>{{ requestMonitor.history.lastStatus }}</strong></div>
+            <div class="diagnostic-row"><span>Ultimo dato</span><strong>{{ requestMonitor.history.lastSuccessAt }}</strong></div>
+          </div>
+          <div class="diagnostic-card">
+            <div class="diagnostic-title">Render del frontend</div>
+            <div class="diagnostic-row"><span>Ultima pintura</span><strong>{{ requestMonitor.ui.lastRenderedAt }}</strong></div>
+            <div class="diagnostic-row"><span>Ultimo error</span><strong>{{ requestMonitor.ui.lastError }}</strong></div>
+            <div class="diagnostic-row"><span>Dispositivo</span><strong>{{ selectedDevice.status === 'connected' ? 'Conectado' : 'Desconectado' }}</strong></div>
+          </div>
+        </div>
+      </section>
+
       <section class="alerts-section">
         <div class="alerts-header">
           <h2 class="section-title">Tabla de Alertas (día actual)</h2>
@@ -287,6 +318,27 @@ const historyFilters = ref({
 })
 const lastProcessedAlertTimestamp = ref(0)
 
+const requestMonitor = ref({
+  dashboard: {
+    attempts: 0,
+    ok: 0,
+    error: 0,
+    lastStatus: 'sin solicitudes',
+    lastSuccessAt: 'sin datos'
+  },
+  history: {
+    attempts: 0,
+    ok: 0,
+    error: 0,
+    lastStatus: 'sin solicitudes',
+    lastSuccessAt: 'sin datos'
+  },
+  ui: {
+    lastRenderedAt: 'sin render',
+    lastError: 'sin errores'
+  }
+})
+
 const getStatus = (value, min, max) => {
   const percentage = ((value - min) / (max - min)) * 100
   if (percentage < 15 || percentage > 85) return 'danger'
@@ -323,6 +375,10 @@ const formatTime = (date) => {
   const minute = String(date.getMinutes()).padStart(2, '0')
   const second = String(date.getSeconds()).padStart(2, '0')
   return `${hour}:${minute}:${second}`
+}
+
+const formatDateTime = (date) => {
+  return `${formatDate(date)} ${formatTime(date)}`
 }
 
 const createRecord = ({ ph, temperature, conductivity, timestamp }) => {
@@ -479,8 +535,19 @@ const formatLastSync = (value) => {
 }
 
 const loadHistoryFromApi = async () => {
+  requestMonitor.value.history.attempts += 1
   const rows = await fetchSensorHistory(300)
-  if (!Array.isArray(rows)) return
+  if (!Array.isArray(rows)) {
+    requestMonitor.value.history.error += 1
+    requestMonitor.value.history.lastStatus = 'error'
+    requestMonitor.value.ui.lastError = 'Fallo GET /api/sensors/history'
+    return
+  }
+
+  requestMonitor.value.history.ok += 1
+  requestMonitor.value.history.lastStatus = `ok (${rows.length} filas)`
+  requestMonitor.value.history.lastSuccessAt = formatDateTime(new Date())
+
   historyRecords.value = rows.map((item) =>
     createRecord({
       ph: item.ph,
@@ -492,8 +559,13 @@ const loadHistoryFromApi = async () => {
 }
 
 const loadDashboardFromApi = async () => {
+  requestMonitor.value.dashboard.attempts += 1
   const dashboard = await fetchDashboardData()
+  console.log('[DEBUG] Respuesta de /api/dashboard:', dashboard)
   if (!dashboard) {
+    requestMonitor.value.dashboard.error += 1
+    requestMonitor.value.dashboard.lastStatus = 'error'
+    requestMonitor.value.ui.lastError = 'Fallo GET /api/dashboard'
     devices.value[0] = {
       ...devices.value[0],
       status: 'disconnected',
@@ -503,6 +575,10 @@ const loadDashboardFromApi = async () => {
     lastSync.value = 'Sin datos del Arduino'
     return
   }
+
+  requestMonitor.value.dashboard.ok += 1
+  requestMonitor.value.dashboard.lastStatus = 'ok'
+  requestMonitor.value.dashboard.lastSuccessAt = formatDateTime(new Date())
 
   devices.value[0] = {
     ...devices.value[0],
@@ -543,6 +619,7 @@ const updateSensorData = async () => {
 
   await loadDashboardFromApi()
   await loadHistoryFromApi()
+  requestMonitor.value.ui.lastRenderedAt = formatDateTime(new Date())
 
   const latestRecord = historyRecords.value[0]
   if (!latestRecord || !latestRecord.isAlert) return
@@ -763,7 +840,8 @@ onUnmounted(() => {
 
 .alerts-section,
 .filters-section,
-.charts-section {
+.charts-section,
+.diagnostics-section {
   margin-top: 28px;
   background: #ffffff;
   border-radius: 12px;
@@ -876,6 +954,39 @@ onUnmounted(() => {
   font-size: 14px;
 }
 
+.diagnostics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 12px;
+}
+
+.diagnostic-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 12px;
+  background: #f9fafb;
+}
+
+.diagnostic-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 10px;
+}
+
+.diagnostic-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: #4b5563;
+  margin-top: 6px;
+}
+
+.diagnostic-row strong {
+  color: #111827;
+}
+
 .line-chart {
   width: 100%;
   height: 120px;
@@ -944,7 +1055,8 @@ onUnmounted(() => {
 
   .alerts-section,
   .filters-section,
-  .charts-section {
+  .charts-section,
+  .diagnostics-section {
     margin-top: 20px;
     padding: 16px;
   }
