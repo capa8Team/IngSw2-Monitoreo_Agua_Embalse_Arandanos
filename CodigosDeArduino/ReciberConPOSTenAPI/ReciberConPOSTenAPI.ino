@@ -22,7 +22,7 @@ const char* apSsid = "ESP8266-pH";
 const char* apPassword = "12345678";
 
 // URL de tu API REST para registrar lecturas
-const char* serverName = "http://127.0.0.1:8000/api/sensors";
+const char* serverName = "http://127.0.0.1:8000/api/sensors/ph";
 
 // Debe coincidir con el struct del sender
 typedef struct struct_message {
@@ -148,6 +148,53 @@ const char index_html[] PROGMEM = R"rawliteral(
 
 String lastPostStatus = "Sin envio";
 
+bool connectStaWiFi(unsigned long timeoutMs = 12000) {
+  if (strlen(ssid) == 0) {
+    Serial.println("SSID vacio: STA deshabilitado");
+    return false;
+  }
+
+  Serial.print("Conectando STA a: ");
+  Serial.println(ssid);
+
+  WiFi.begin(ssid, password);
+  unsigned long startMs = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - startMs < timeoutMs) {
+    delay(400);
+    Serial.println("Conectando STA...");
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("STA IP Address: ");
+    Serial.println(WiFi.localIP());
+    Serial.print("Wi-Fi Channel: ");
+    Serial.println(WiFi.channel());
+    return true;
+  }
+
+  Serial.print("Sin conexion STA (status=");
+  Serial.print(WiFi.status());
+  Serial.println(")");
+  return false;
+}
+
+void ensureStaConnected() {
+  static unsigned long lastRetryMs = 0;
+  const unsigned long RETRY_INTERVAL_MS = 10000;
+
+  if (WiFi.status() == WL_CONNECTED) {
+    return;
+  }
+
+  if (millis() - lastRetryMs < RETRY_INTERVAL_MS) {
+    return;
+  }
+
+  lastRetryMs = millis();
+  Serial.println("STA desconectado, reintentando...");
+  connectStaWiFi(8000);
+}
+
 String buildBoardJson() {
   board["device"] = incomingReadings.Nombre;
   board["id_env"] = incomingReadings.id_env;
@@ -158,6 +205,8 @@ String buildBoardJson() {
 }
 
 void postToApi() {
+  ensureStaConnected();
+
   if (WiFi.status() != WL_CONNECTED) {
     lastPostStatus = "Sin WiFi STA";
     return;
@@ -190,9 +239,12 @@ void postToApi() {
     Serial.print("POST API response: ");
     Serial.println(response);
   } else {
-    lastPostStatus = String("Error ") + httpCode;
+    String errorText = http.errorToString(httpCode);
+    lastPostStatus = String("Error ") + httpCode + " " + errorText;
     Serial.print("POST API failed, code: ");
     Serial.println(httpCode);
+    Serial.print("POST API error: ");
+    Serial.println(errorText);
   }
 
   http.end();
@@ -234,6 +286,8 @@ void setupWebServer() {
 
 void setupWiFi() {
   WiFi.mode(WIFI_AP_STA);
+  WiFi.setAutoReconnect(true);
+  WiFi.persistent(true);
   WiFi.softAP(apSsid, apPassword);
 
   Serial.print("AP SSID: ");
@@ -241,19 +295,7 @@ void setupWiFi() {
   Serial.print("AP IP Address: ");
   Serial.println(WiFi.softAPIP());
 
-  WiFi.begin(ssid, password);
-  unsigned long startMs = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - startMs < 12000) {
-    delay(400);
-    Serial.println("Conectando STA...");
-  }
-
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("STA IP Address: ");
-    Serial.println(WiFi.localIP());
-    Serial.print("Wi-Fi Channel: ");
-    Serial.println(WiFi.channel());
-  } else {
+  if (!connectStaWiFi()) {
     Serial.println("Sin conexion STA, POST a API deshabilitado temporalmente");
   }
 }
@@ -273,6 +315,10 @@ void setup() {
   Serial.begin(115200);
   delay(200);
 
+  if (String(serverName).indexOf("127.0.0.1") >= 0 || String(serverName).indexOf("localhost") >= 0) {
+    Serial.println("AVISO: serverName usa localhost/127.0.0.1; desde ESP debes usar la IP de tu PC/API");
+  }
+
   strncpy(incomingReadings.Nombre, "Sin dato", sizeof(incomingReadings.Nombre));
   incomingReadings.Nombre[sizeof(incomingReadings.Nombre) - 1] = '\0';
   incomingReadings.id_env = -1;
@@ -284,6 +330,8 @@ void setup() {
 }
 
 void loop() {
+  ensureStaConnected();
+
   if (hasPendingReading) {
     noInterrupts();
     memcpy(&incomingReadings, &pendingReadings, sizeof(incomingReadings));
