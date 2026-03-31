@@ -14,15 +14,16 @@
 #include <Arduino_JSON.h>
 
 // Credenciales STA para acceso a internet/API
-const char* ssid = "Jacke_D phone";
-const char* password = "Panconpalta1";
+const char* ssid = "movistar2,4GHZ_0FDAC0";
+const char* password = "jen82E99M6zcm2m8262v";
 
 // Red AP local para abrir el dashboard aun sin internet
 const char* apSsid = "ESP8266-pH";
 const char* apPassword = "12345678";
 
 // URL de tu API REST para registrar lecturas
-const char* serverName = "http://127.0.0.1:8000/api/sensors/ph";
+// Importante: usa la IP LAN del PC donde corre FastAPI (no localhost).
+const char* serverName = "http://192.168.1.97:8000/api/sensors/ph";
 
 // Debe coincidir con el struct del sender
 typedef struct struct_message {
@@ -226,6 +227,7 @@ void postToApi() {
   payload["sensor_id"] = incomingReadings.Nombre;
   payload["id_env"] = incomingReadings.id_env;
   payload["ph"] = incomingReadings.pH;
+  payload["timestamp"] = millis() / 1000;
 
   String requestBody;
   serializeJson(payload, requestBody);

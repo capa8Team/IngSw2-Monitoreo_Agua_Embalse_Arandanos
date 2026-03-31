@@ -126,6 +126,16 @@ class SensorReading(BaseModel):
     timestamp: int
 
 
+class SensorPhPostReading(BaseModel):
+    sensor_id: str
+    id_env: int
+    ph: float
+    timestamp: int | None = None
+    temperature: float | None = None
+    conductivity: float | None = None
+    bateria: int = Field(default=100, ge=0, le=100)
+
+
 class SensorNestedReadings(BaseModel):
     temperature: float | None = None
     humidity: float | None = None
@@ -272,6 +282,33 @@ def save_sensor_reading_to_mongodb(reading: SensorReading, arduino_id: str = "es
         bateria=bateria,
     )
     return save_sensor_payload_to_mongodb(payload)
+
+
+def build_payload_from_ph_post(reading: SensorPhPostReading) -> SensorMongoPayload:
+    """Convierte el payload reducido del ESP8266 a esquema completo para MongoDB."""
+    latest = get_latest_sensor_reading() or {}
+
+    temperature = (
+        float(reading.temperature)
+        if reading.temperature is not None
+        else float(latest.get("temperature", 0.0))
+    )
+    conductivity = (
+        float(reading.conductivity)
+        if reading.conductivity is not None
+        else float(latest.get("conductivity", 0.0))
+    )
+
+    return SensorMongoPayload(
+        arduino_id=f"{reading.sensor_id}-{reading.id_env}",
+        timestamp=reading.timestamp,
+        mediciones=SensorMeasurements(
+            ph=float(reading.ph),
+            temperatura=temperature,
+            conductividad=conductivity,
+        ),
+        bateria=reading.bateria,
+    )
 
 
 def normalize_sensor_document(reading: dict) -> dict:
@@ -526,6 +563,43 @@ def get_dashboard_data() -> DashboardResponse:
 # ============================================================================
 # ENDPOINTS PARA SENSORES (ESP8266)
 # ============================================================================
+
+@app.post("/api/sensors/ph", response_model=dict, status_code=201, tags=["Sensores"])
+def create_sensor_ph_post(reading: SensorPhPostReading):
+    """
+    Recibir lecturas de pH enviadas por ESP8266 vía HTTP POST.
+    Formato esperado:
+    {
+      "sensor_id": "sensor-ph-a",
+      "id_env": 1,
+      "ph": 7.12,
+      "timestamp": 12345
+    }
+    """
+    logger.info(
+        "POST pH recibido: sensor_id=%s, id_env=%s, pH=%s",
+        reading.sensor_id,
+        reading.id_env,
+        reading.ph,
+    )
+
+    payload = build_payload_from_ph_post(reading)
+    mongo_id = save_sensor_payload_to_mongodb(payload)
+    update_dashboard_state_from_mongodb()
+
+    return {
+        "status": "success",
+        "message": "Lectura de pH guardada",
+        "id": mongo_id,
+        "data": {
+            "sensor_id": reading.sensor_id,
+            "id_env": reading.id_env,
+            "ph": reading.ph,
+            "timestamp": reading.timestamp,
+            "temperature": payload.mediciones.temperatura,
+            "conductivity": payload.mediciones.conductividad,
+        },
+    }
 
 @app.put("/api/sensors/ph", response_model=dict, status_code=200, tags=["Sensores"])
 def update_sensor_readings(reading: SensorReading):
