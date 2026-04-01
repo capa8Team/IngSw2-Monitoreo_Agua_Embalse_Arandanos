@@ -25,6 +25,11 @@ def configure_logging() -> None:
     logger.setLevel(logging.INFO)
     logger.handlers.clear()
 
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    logs_dir = os.path.join(base_dir, "logs")
+    os.makedirs(logs_dir, exist_ok=True)
+    log_file_path = os.path.join(logs_dir, "app.log")
+
     formatter = logging.Formatter(
         "%(asctime)s %(levelname)s: %(message)s [in %(filename)s:%(lineno)d]"
     )
@@ -33,7 +38,7 @@ def configure_logging() -> None:
     stream_handler.setLevel(logging.INFO)
     stream_handler.setFormatter(formatter)
 
-    file_handler = RotatingFileHandler("app.log", maxBytes=16384, backupCount=20)
+    file_handler = RotatingFileHandler(log_file_path, maxBytes=16384, backupCount=20)
     file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(formatter)
 
@@ -250,7 +255,8 @@ alerts_store: list[AlertRecord] = [
 
 # Variable para controlar la tarea de background que genera datos simulados
 background_task: Optional[asyncio.Task] = None
-SIMULATED_DATA_ENABLED = True  # Cambiar a False para desactivar datos simulados automáticos
+# Desactivado por defecto para priorizar datos reales del ESP8266.
+SIMULATED_DATA_ENABLED = os.getenv("SIMULATED_DATA_ENABLED", "false").lower() == "true"
 
 
 # ============================================================================
