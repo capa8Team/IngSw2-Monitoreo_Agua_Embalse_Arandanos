@@ -6,6 +6,7 @@
 */
 
 #include <ESP8266WiFi.h>
+#include <WiFiClientSecure.h>
 #include <espnow.h>
 #include <ESP8266HTTPClient.h>
 #include "ESPAsyncTCP.h"
@@ -23,7 +24,7 @@ const char* apPassword = "12345678";
 
 // URL de tu API REST para registrar lecturas
 // Importante: usa la IP LAN del PC donde corre FastAPI (no localhost).
-const char* serverName = "http://192.168.1.97:8000/api/sensors/ph";
+const char* serverName = "https://deployarandanosv2-production.up.railway.app/api/sensors/ph";
 
 // Debe coincidir con el struct del sender
 typedef struct struct_message {
@@ -213,10 +214,24 @@ void postToApi() {
     return;
   }
 
-  WiFiClient client;
   HTTPClient http;
 
-  if (!http.begin(client, serverName)) {
+  String endpoint = String(serverName);
+  bool isHttps = endpoint.startsWith("https://");
+  bool beginOk = false;
+
+  // Los clientes deben vivir hasta despues de http.POST(...), por eso se declaran en este alcance.
+  WiFiClient client;
+  WiFiClientSecure clientSecure;
+
+  if (isHttps) {
+    clientSecure.setInsecure();
+    beginOk = http.begin(clientSecure, endpoint);
+  } else {
+    beginOk = http.begin(client, endpoint);
+  }
+
+  if (!beginOk) {
     lastPostStatus = "http.begin fallo";
     return;
   }

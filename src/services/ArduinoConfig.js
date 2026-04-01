@@ -10,7 +10,7 @@
 // ============================================================================
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
-const POLL_INTERVAL = 10000 // Polling cada 10 segundos
+const POLL_INTERVAL = 2000 // Polling cada 2 segundos
 
 // ============================================================================
 // OPCIÓN 1: Fetch API (Polling) - Obtener datos del dashboard desde MongoDB
