@@ -3,9 +3,10 @@ import logging
 import asyncio
 import math
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal, Optional
 from logging.handlers import RotatingFileHandler
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
@@ -19,6 +20,28 @@ from pymongo.errors import ConnectionFailure
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+CHILE_TZ = ZoneInfo("America/Santiago")
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def chile_now() -> datetime:
+    return utc_now().astimezone(CHILE_TZ)
+
+
+def to_chile_time(value: datetime | None) -> datetime:
+    if not isinstance(value, datetime):
+        return chile_now()
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(CHILE_TZ)
+
+
+def epoch_to_utc_datetime(epoch: int) -> datetime:
+    seconds = epoch / 1000 if epoch > 10_000_000_000 else epoch
+    return datetime.fromtimestamp(seconds, tz=timezone.utc)
 
 
 def configure_logging() -> None:
@@ -265,12 +288,12 @@ SIMULATED_DATA_ENABLED = os.getenv("SIMULATED_DATA_ENABLED", "false").lower() ==
 
 def _resolve_sensor_timestamp(timestamp: int | None) -> tuple[datetime, int | None]:
     if timestamp is None:
-        return datetime.utcnow(), None
+        return utc_now(), None
 
     # ESP8266 suele enviar millis()/1000; si no parece epoch UTC, usamos hora del servidor.
     if timestamp >= 1_500_000_000:
-        return datetime.utcfromtimestamp(timestamp), None
-    return datetime.utcnow(), timestamp
+        return epoch_to_utc_datetime(timestamp), None
+    return utc_now(), timestamp
 
 
 def save_sensor_payload_to_mongodb(payload: SensorMongoPayload) -> Optional[str]:
@@ -353,6 +376,8 @@ def normalize_sensor_document(reading: dict) -> dict:
     temperature = mediciones.get("temperatura", reading.get("temperature"))
     conductivity = mediciones.get("conductividad", reading.get("conductivity"))
 
+    normalized_timestamp = to_chile_time(reading.get("timestamp", utc_now()))
+
     return {
         "id": str(reading.get("_id", reading.get("id", ""))),
         "arduino_id": reading.get("arduino_id", reading.get("sensor_id", "esp8266_1")),
@@ -360,7 +385,7 @@ def normalize_sensor_document(reading: dict) -> dict:
         "temperature": float(temperature) if temperature is not None else 0.0,
         "conductivity": float(conductivity) if conductivity is not None else 0.0,
         "bateria": int(reading.get("bateria", 100)),
-        "timestamp": reading.get("timestamp", datetime.utcnow()),
+        "timestamp": normalized_timestamp,
     }
 
 
@@ -372,7 +397,9 @@ def get_latest_sensor_reading() -> Optional[dict]:
     
     try:
         collection = db["sensor_readings"]
-        reading = collection.find_one(sort=[("timestamp", -1)])
+        # Usamos _id para obtener la última inserción real y evitar bloqueos por
+        # dispositivos con reloj desfasado o timestamps futuros.
+        reading = collection.find_one(sort=[("_id", -1)])
         if reading:
             return normalize_sensor_document(reading)
         return None
@@ -389,7 +416,7 @@ def get_sensor_readings_history(limit: int = 100) -> list[dict]:
     
     try:
         collection = db["sensor_readings"]
-        readings = list(collection.find().sort("timestamp", -1).limit(limit))
+        readings = list(collection.find().sort("_id", -1).limit(limit))
         return [normalize_sensor_document(reading) for reading in readings]
     except Exception as e:
         logger.error(f"Error leyendo historial de MongoDB: {e}")
@@ -405,7 +432,7 @@ def update_dashboard_state_from_mongodb() -> DashboardResponse | None:
         dashboard_state = None
         return None
 
-    now = datetime.utcnow()
+    now = chile_now()
 
     # Determinar estado basado en rangos
     def get_status(value: float, min_val: float, max_val: float, safe_max: float) -> str:
@@ -415,9 +442,9 @@ def update_dashboard_state_from_mongodb() -> DashboardResponse | None:
             return "warning"
         return "stable"
 
-    last_updated = reading.get("timestamp", now)
+    last_updated = to_chile_time(reading.get("timestamp"))
     # El Arduino se considera conectado si hay una lectura en los últimos 30 segundos
-    time_since_reading = (now - last_updated).total_seconds()
+    time_since_reading = max(0.0, (now - last_updated).total_seconds())
     connected = time_since_reading <= 30
     
     # Calcular uptime del sistema (cuánto tiempo ha pasado desde la última lectura)
@@ -552,7 +579,7 @@ def send_mailersend_notification(device_name: str, sensor: str, medicion: str, n
 
 def generate_simulated_sensor_data() -> SensorMongoPayload:
     """Generar datos de sensores simulados realistas"""
-    now = datetime.utcnow()
+    now = chile_now()
     
     # Simular variación natural usando funciones trigonométricas
     hours_elapsed = (now.hour + now.minute / 60 + now.second / 3600)
@@ -669,7 +696,7 @@ def get_diagnostics() -> dict:
         if sensor_reading:
             last_reading_time = sensor_reading.get("timestamp")
             # El Arduino se considera conectado si hay una lectura en los últimos 30 segundos
-            time_since_reading = (datetime.utcnow() - last_reading_time).total_seconds()
+            time_since_reading = max(0.0, (chile_now() - to_chile_time(last_reading_time)).total_seconds())
             arduino_connected = time_since_reading <= 30
             data_source = "real"
     
@@ -692,7 +719,7 @@ def get_dashboard_data() -> DashboardResponse:
         # Generar datos simulados dinámicos si no hay datos en MongoDB
         # Los datos varían basados en la hora actual, simulando lecturas reales
         import math
-        now = datetime.utcnow()
+        now = chile_now()
         
         # Simular variación natural usando funciones trigonométricas
         hours_elapsed = (now.hour + now.minute / 60 + now.second / 3600)
@@ -940,7 +967,7 @@ def list_alerts() -> list[AlertRecord]:
 
 @app.post("/api/alerts", response_model=AlertRecord, status_code=201, tags=["Alertas"])
 def create_alert(payload: AlertCreate) -> AlertRecord:
-    now = datetime.utcnow()
+    now = chile_now()
     device_name = payload.nombreDispositivo or payload.embalse
     new_alert = AlertRecord(
         id=(alerts_store[-1].id + 1) if alerts_store else 1,

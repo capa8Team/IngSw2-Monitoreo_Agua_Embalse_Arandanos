@@ -276,6 +276,8 @@ import SensorCard from './components/SensorCard.vue'
 import { checkAndSendAlerts } from './services/AlertService.js'
 import { fetchDashboardData, fetchSensorHistory } from './services/ArduinoConfig.js'
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+
 const ALERT_TABLE_LIMIT = 20
 const SENSOR_LIMITS = {
   ph: { min: 6.0, max: 8.5, safeMax: 8.0 },
@@ -590,7 +592,7 @@ const loadDashboardFromApi = async () => {
   // Obtener información de diagnóstico para saber la fuente de datos
   let dataSource = 'unknown'
   try {
-    const diagResponse = await fetch('http://localhost:8000/api/diagnostics')
+    const diagResponse = await fetch(`${API_BASE_URL}/api/diagnostics`)
     if (diagResponse.ok) {
       const diag = await diagResponse.json()
       dataSource = diag.data_source || 'unknown'
@@ -618,18 +620,15 @@ const selectDevice = (device) => {
   selectedDeviceId.value = device.id
   currentView.value = 'dashboard'
   showAllTodayAlerts.value = false
-  startSensorUpdates()
 }
 
 const openHistory = () => {
   currentView.value = 'history'
   loadHistoryFromApi()
-  stopSensorUpdates()
 }
 
 const goBack = () => {
   currentView.value = 'devices'
-  stopSensorUpdates()
 }
 
 let updateInterval = null
@@ -639,8 +638,15 @@ const updateSensorData = async () => {
   if (!selectedDeviceId.value) return
 
   await loadDashboardFromApi()
-  await loadHistoryFromApi()
+
+  // El historial solo es necesario cuando se visualiza dashboard/historial.
+  if (currentView.value === 'dashboard' || currentView.value === 'history') {
+    await loadHistoryFromApi()
+  }
+
   requestMonitor.value.ui.lastRenderedAt = formatDateTime(new Date())
+
+  if (currentView.value !== 'dashboard') return
 
   const latestRecord = historyRecords.value[0]
   if (!latestRecord || !latestRecord.isAlert) return
@@ -667,7 +673,7 @@ const stopSensorUpdates = () => {
 
 onMounted(() => {
   selectedDeviceId.value = 1
-  updateSensorData()
+  startSensorUpdates()
 })
 
 onUnmounted(() => {
