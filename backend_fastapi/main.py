@@ -261,6 +261,8 @@ class MailerSendConfig(BaseModel):
     from_email: str | None
     from_name: str
     to_emails: list[str]
+    template_id: str
+    max_recipients_per_request: int
 
 
 dashboard_state: DashboardResponse | None = None
@@ -489,13 +491,53 @@ def update_dashboard_state_from_mongodb() -> DashboardResponse | None:
 
 def get_mailersend_config() -> MailerSendConfig:
     to_emails_raw = os.getenv("MAILERSEND_TO_EMAILS", "")
-    to_emails = [email.strip() for email in to_emails_raw.split(",") if email.strip()]
+    # Mantener orden y remover duplicados para evitar envios repetidos.
+    to_emails = list(dict.fromkeys(email.strip() for email in to_emails_raw.split(",") if email.strip()))
+
+    max_recipients_raw = os.getenv("MAILERSEND_MAX_RECIPIENTS_PER_REQUEST", "1").strip()
+    try:
+        max_recipients = max(1, int(max_recipients_raw))
+    except ValueError:
+        logger.warning(
+            "MAILERSEND_MAX_RECIPIENTS_PER_REQUEST invalido (%s). Usando 1.",
+            max_recipients_raw,
+        )
+        max_recipients = 1
+
     return MailerSendConfig(
         api_token=os.getenv("MAILERSEND_API_TOKEN"),
         from_email=os.getenv("MAILERSEND_FROM_EMAIL"),
         from_name=os.getenv("MAILERSEND_FROM_NAME", "Monitoreo Embalse Arandanos"),
         to_emails=to_emails,
+        template_id=os.getenv("MAILERSEND_TEMPLATE_ID", "351ndgw8m7rgzqx8"),
+        max_recipients_per_request=max_recipients,
     )
+
+
+def chunk_recipients(recipients: list[str], chunk_size: int) -> list[list[str]]:
+    if chunk_size <= 0:
+        chunk_size = 1
+    return [recipients[i:i + chunk_size] for i in range(0, len(recipients), chunk_size)]
+
+
+def is_mailersend_recipient_limit_error(response: requests.Response) -> bool:
+    if response.status_code != 422:
+        return False
+
+    text = response.text or ""
+    if "MS42205" in text:
+        return True
+
+    try:
+        data = response.json()
+    except ValueError:
+        return False
+
+    if isinstance(data, dict):
+        message_text = f"{data.get('message', '')} {data.get('code', '')}"
+        if "MS42205" in message_text:
+            return True
+    return False
 
 
 def measurement_is_out_of_range(payload: AlertCreate) -> bool:
@@ -528,49 +570,85 @@ def send_mailersend_notification(device_name: str, sensor: str, medicion: str, n
     fecha = now.strftime("%Y-%m-%d")
     hora = now.strftime("%H:%M:%S")
 
-    payload = {
-        "from": {
-            "email": config.from_email,
-            "name": config.from_name,
-        },
-        "to": [{"email": email} for email in config.to_emails],
-        "subject": f"⚠️ Alerta: {sensor} fuera de rango - {device_name}",
-        "template_id": "351ndgw8m7rgzqx8",
-        "personalization": [
-            {
-                "email": email,
-                "data": {
-                    "DEVICE_NAME": device_name,
-                    "DAY_NAME": day_name,
-                    "FECHA": fecha,
-                    "HORA": hora,
-                    "SENSOR": sensor,
-                    "MEDICION": medicion,
+    def build_payload(recipients: list[str]) -> dict:
+        return {
+            "from": {
+                "email": config.from_email,
+                "name": config.from_name,
+            },
+            "to": [{"email": email} for email in recipients],
+            "subject": f"⚠️ Alerta: {sensor} fuera de rango - {device_name}",
+            "template_id": config.template_id,
+            "personalization": [
+                {
+                    "email": email,
+                    "data": {
+                        "DEVICE_NAME": device_name,
+                        "DAY_NAME": day_name,
+                        "FECHA": fecha,
+                        "HORA": hora,
+                        "SENSOR": sensor,
+                        "MEDICION": medicion,
+                    }
                 }
-            }
-            for email in config.to_emails
-        ],
-    }
+                for email in recipients
+            ],
+        }
+
     headers = {
         "Authorization": f"Bearer {config.api_token}",
         "Content-Type": "application/json",
     }
 
-    try:
-        response = requests.post(
-            "https://api.mailersend.com/v1/email",
-            json=payload,
-            headers=headers,
-            timeout=10,
+    recipient_batches = chunk_recipients(config.to_emails, config.max_recipients_per_request)
+
+    for recipients_batch in recipient_batches:
+        try:
+            response = requests.post(
+                "https://api.mailersend.com/v1/email",
+                json=build_payload(recipients_batch),
+                headers=headers,
+                timeout=10,
+            )
+        except requests.RequestException as exc:
+            logger.error(f"Error enviando email a lote {recipients_batch}: {exc}")
+            continue
+
+        if response.status_code in [200, 202]:
+            logger.info(f"Email enviado exitosamente a lote {recipients_batch}")
+            continue
+
+        if is_mailersend_recipient_limit_error(response) and len(recipients_batch) > 1:
+            logger.warning(
+                "MailerSend limito cantidad de destinatarios en lote. Reintentando 1 a 1."
+            )
+            for email in recipients_batch:
+                try:
+                    single_response = requests.post(
+                        "https://api.mailersend.com/v1/email",
+                        json=build_payload([email]),
+                        headers=headers,
+                        timeout=10,
+                    )
+                    if single_response.status_code in [200, 202]:
+                        logger.info(f"Email enviado exitosamente a {email}")
+                    else:
+                        logger.error(
+                            "Respuesta MailerSend individual %s para %s: %s",
+                            single_response.status_code,
+                            email,
+                            single_response.text,
+                        )
+                except requests.RequestException as single_exc:
+                    logger.error(f"Error enviando email individual a {email}: {single_exc}")
+            continue
+
+        logger.error(
+            "Respuesta MailerSend para lote %s: %s - %s",
+            recipients_batch,
+            response.status_code,
+            response.text,
         )
-
-        if response.status_code not in [200, 202]:
-            logger.error(f"Respuesta MailerSend: {response.status_code} - {response.text}")
-            response.raise_for_status()
-
-        logger.info(f"Email enviado exitosamente a {config.to_emails}")
-    except requests.RequestException as exc:
-        logger.error(f"Error enviando email: {exc}")
 
 
 # ============================================================================
