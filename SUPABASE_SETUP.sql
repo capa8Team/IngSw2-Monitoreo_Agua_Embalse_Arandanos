@@ -21,11 +21,13 @@ CREATE TABLE IF NOT EXISTS alert_limits (
   ph_max DECIMAL(4, 2) DEFAULT 8.5,
   temp_min DECIMAL(5, 2) DEFAULT 15,
   temp_max DECIMAL(5, 2) DEFAULT 30,
-  turbidity_max DECIMAL(5, 2) DEFAULT 5,
+  conductivity_min DECIMAL(10, 2) DEFAULT 0,
+  conductivity_max DECIMAL(10, 2) DEFAULT 2000,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   UNIQUE(user_id)
 );
+
 
 -- Tabla de historial de sensores (opcional)
 CREATE TABLE IF NOT EXISTS sensor_readings (
@@ -158,3 +160,22 @@ CREATE TRIGGER on_user_role_created
 -- INSERT INTO alert_limits (user_id, ph_min, ph_max, temp_min, temp_max, turbidity_max)
 -- VALUES ('<uuid-del-admin-aqui>', 6.0, 9.0, 10, 40, 10)
 -- ON CONFLICT (user_id) DO NOTHING;
+-- 🔥 AGREGAR ESTA TABLA PARA LÍMITES GLOBALES (solo admin puede editar)
+CREATE TABLE IF NOT EXISTS global_alert_limits (
+  id BIGSERIAL PRIMARY KEY,
+  ph_min DECIMAL(4, 2) DEFAULT 6.5,
+  ph_max DECIMAL(4, 2) DEFAULT 8.5,
+  temp_min DECIMAL(5, 2) DEFAULT 15,
+  temp_max DECIMAL(5, 2) DEFAULT 30,
+  conductivity_min DECIMAL(10, 2) DEFAULT 0,
+  conductivity_max DECIMAL(10, 2) DEFAULT 2000,
+  updated_by UUID REFERENCES auth.users(id),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Política RLS: Solo admin puede editar límites globales
+CREATE POLICY "Solo admin puede editar límites globales"
+  ON global_alert_limits FOR UPDATE
+  USING (
+    auth.uid() IN (SELECT id FROM users_roles WHERE role = 'admin')
+  );
