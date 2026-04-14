@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   backend:
     build:
@@ -10,7 +8,7 @@ services:
     environment:
       MONGODB_URL: mongodb://admin:Panconpalta1@mongodb:27017/?authSource=admin
       MONGODB_DB: Arandanos
-      SIMULATED_DATA_ENABLED: "false"
+      SIMULATED_DATA_ENABLED: "${SIMULATED_DATA_ENABLED:-true}"
     ports:
       - "8000:8000"
     depends_on:
@@ -24,7 +22,10 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
       args:
-        VITE_API_URL: ""
+        VITE_API_URL: "${VITE_API_URL:-}"
+        VITE_DATA_MODE: "${VITE_DATA_MODE:-simulated}"
+        VITE_SUPABASE_URL: "${VITE_SUPABASE_URL:-}"
+        VITE_SUPABASE_ANON_KEY: "${VITE_SUPABASE_ANON_KEY:-}"
     container_name: frontend-arandanos
     restart: always
     ports:
