@@ -30,6 +30,14 @@
         </button>
 
         <button
+          class="admin-btn"
+          @click="$emit('open-user-management')"
+          title="Gestión de usuarios"
+        >
+          Gestion de usuarios
+        </button>
+
+        <button
           class="history-btn"
           @click="$emit('open-history')"
           title="Abrir registro histórico"
@@ -81,7 +89,7 @@ const selectDevice = (device) => {
   emit('select-device', device)
 }
 
-const emit = defineEmits(['select-device', 'open-history'])
+const emit = defineEmits(['select-device', 'open-history', 'open-user-management'])
 </script>
 
 <style scoped>
@@ -142,6 +150,22 @@ const emit = defineEmits(['select-device', 'open-history'])
 
 .history-btn:hover {
   background: #e8f5e9;
+}
+
+.admin-btn {
+  border: 1px solid #ffa500;
+  background: #ffffff;
+  color: #ff8c00;
+  border-radius: 6px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.admin-btn:hover {
+  background: #fff5e6;
 }
 
 .view-btn {

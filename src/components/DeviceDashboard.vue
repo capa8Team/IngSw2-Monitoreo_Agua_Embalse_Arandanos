@@ -4,6 +4,7 @@
       :devices-data="devices"
       @select-device="selectDevice"
       @open-history="openHistory"
+      @open-user-management="openUserManagementView"
     />
   </div>
 
@@ -26,7 +27,6 @@
       </div>
       <div v-if="isAdmin" class="header-center admin-top-actions">
         <button class="admin-nav-btn" @click="openAlertConfigView">Configuracion rango alertas</button>
-        <button class="admin-nav-btn" @click="openUserManagementView">Gestion de usuarios</button>
       </div>
       <div class="header-right">
         <div class="data-source-badge" :class="`source-${selectedDevice.dataSource}`">
@@ -39,6 +39,32 @@
     </header>
 
     <main class="dashboard-content">
+      <section class="info-section">
+        <h2 class="section-title">Información del Sistema</h2>
+        <div class="info-grid">
+          <div class="info-card">
+            <div class="info-card-label">Sensores Activos</div>
+            <div class="info-card-value">3/3</div>
+          </div>
+          <div class="info-card">
+            <div class="info-card-label">Última Sincronización</div>
+            <div class="info-card-value">{{ lastSync }}</div>
+          </div>
+          <div class="info-card">
+            <div class="info-card-label">Conexión Arduino</div>
+            <div class="info-card-value" :class="selectedDevice.status === 'connected' ? 'connected' : 'disconnected'">
+              {{ selectedDevice.status === 'connected' ? 'Conectado' : 'Desconectado' }}
+            </div>
+          </div>
+          <div class="info-card">
+            <div class="info-card-label">Rol de Usuario</div>
+            <div class="info-card-value" :class="isAdmin ? 'admin-role' : 'user-role'">
+              {{ isAdmin ? '👨‍💼 Administrador' : '👤 Empleado' }}
+            </div>
+          </div>
+        </div>
+      </section>
+
       <div class="sensors-grid">
         <SensorCard
           sensor-name="pH"
@@ -68,32 +94,6 @@
           :last-updated="lastSync"
         />
       </div>
-
-      <section class="info-section">
-        <h2 class="section-title">Información del Sistema</h2>
-        <div class="info-grid">
-          <div class="info-card">
-            <div class="info-card-label">Sensores Activos</div>
-            <div class="info-card-value">3/3</div>
-          </div>
-          <div class="info-card">
-            <div class="info-card-label">Última Sincronización</div>
-            <div class="info-card-value">{{ lastSync }}</div>
-          </div>
-          <div class="info-card">
-            <div class="info-card-label">Conexión Arduino</div>
-            <div class="info-card-value" :class="selectedDevice.status === 'connected' ? 'connected' : 'disconnected'">
-              {{ selectedDevice.status === 'connected' ? 'Conectado' : 'Desconectado' }}
-            </div>
-          </div>
-          <div class="info-card">
-            <div class="info-card-label">Rol de Usuario</div>
-            <div class="info-card-value" :class="isAdmin ? 'admin-role' : 'user-role'">
-              {{ isAdmin ? '👨‍💼 Administrador' : '👤 Empleado' }}
-            </div>
-          </div>
-        </div>
-      </section>
 
       <section class="diagnostics-section">
         <div class="alerts-header">
@@ -190,7 +190,6 @@
       </div>
       <div class="header-center admin-top-actions">
         <button class="admin-nav-btn active">Configuracion rango alertas</button>
-        <button class="admin-nav-btn" @click="openUserManagementView">Gestion de usuarios</button>
       </div>
       <div class="header-right">
         <div class="data-source-badge" :class="`source-${selectedDevice.dataSource}`">
@@ -278,7 +277,6 @@
         </div>
       </div>
       <div class="header-center admin-top-actions">
-        <button class="admin-nav-btn" @click="openAlertConfigView">Configuracion rango alertas</button>
         <button class="admin-nav-btn active">Gestion de usuarios</button>
       </div>
       <div class="header-right">
@@ -339,8 +337,16 @@
           </div>
 
           <div class="users-list">
-            <h3>Usuarios existentes</h3>
-            <div v-if="existingUsers.length > 0" class="users-table">
+            <div class="users-list-header">
+              <h3>Usuarios existentes</h3>
+              <button class="refresh-users-btn" @click="loadExistingUsers" :disabled="isLoadingUsers">
+                {{ isLoadingUsers ? '⟳ Cargando...' : '↻ Actualizar' }}
+              </button>
+            </div>
+            <div v-if="isLoadingUsers" class="loading-users">
+              Cargando usuarios...
+            </div>
+            <div v-else-if="existingUsers.length > 0" class="users-table">
               <table>
                 <thead>
                   <tr>
@@ -389,10 +395,6 @@
           <h1 class="header-title">Registro Histórico</h1>
           <p class="header-subtitle">Todas las mediciones guardadas por dispositivo y fecha</p>
         </div>
-      </div>
-      <div v-if="isAdmin" class="header-center admin-top-actions">
-        <button class="admin-nav-btn" @click="openAlertConfigView">Configuracion rango alertas</button>
-        <button class="admin-nav-btn" @click="openUserManagementView">Gestion de usuarios</button>
       </div>
       <button class="pdf-btn" @click="downloadHistoryPdf">Descargar PDF</button>
     </header>
@@ -535,6 +537,7 @@ const isCreatingUser = ref(false)
 const userCreationError = ref('')
 const userCreationSuccess = ref('')
 const existingUsers = ref([])
+const isLoadingUsers = ref(false)
 
 const devices = ref([
   {
@@ -981,10 +984,17 @@ const createNewUser = async () => {
         role: 'employee'
       }
       
+      // Esperar más tiempo para que el trigger sincronice el usuario a users_roles
+      console.log('[createNewUser] ✅ Usuario creado, esperando sincronización (3 segundos)...')
+      await new Promise(resolve => setTimeout(resolve, 3000))
+      
       // Recargar lista de usuarios
+      console.log('[createNewUser] Recargando lista de usuarios...')
       await loadExistingUsers()
+      console.log('[createNewUser] ✅ Lista de usuarios refrescada')
     } else {
       userCreationError.value = result.error || 'Error al crear usuario'
+      console.error('[createNewUser] ❌ Error:', result.error)
     }
   } catch (error) {
     userCreationError.value = `Error: ${error.message}`
@@ -994,11 +1004,26 @@ const createNewUser = async () => {
 }
 
 const loadExistingUsers = async () => {
+  isLoadingUsers.value = true
+  console.log('[loadExistingUsers] Iniciando carga...')
   try {
     const users = await getAllUsers()
-    existingUsers.value = users
+    console.log('[loadExistingUsers] Respuesta de getAllUsers:', users)
+    console.log('[loadExistingUsers] Cantidad de usuarios:', users?.length || 0)
+    
+    // Solo actualizar si realmente hay datos
+    if (users && Array.isArray(users)) {
+      existingUsers.value = users
+      console.log('[loadExistingUsers] ✅ Usuarios actualizados exitosamente')
+    } else {
+      console.warn('[loadExistingUsers] ⚠️ Respuesta inválida, manteniendo lista anterior')
+    }
   } catch (error) {
-    console.error('Error al cargar usuarios:', error)
+    console.error('[loadExistingUsers] ❌ Error al cargar usuarios:', error)
+    console.error('[loadExistingUsers] Stack:', error.stack)
+    // NO limpiar la lista en caso de error, mantener lo que había
+  } finally {
+    isLoadingUsers.value = false
   }
 }
 
@@ -1330,6 +1355,7 @@ onUnmounted(() => {
   padding: 28px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   border: 1px solid #e8e8e8;
+  margin-bottom: 60px;
 }
 
 .section-title {
@@ -1595,10 +1621,44 @@ onUnmounted(() => {
   margin-top: 30px;
 }
 
-.users-list h3 {
-  color: #333;
-  margin-top: 0;
+.users-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 16px;
+}
+
+.users-list-header h3 {
+  color: #333;
+  margin: 0;
+}
+
+.refresh-users-btn {
+  padding: 6px 12px;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 12px;
+  transition: background 0.3s;
+}
+
+.refresh-users-btn:hover:not(:disabled) {
+  background: #5568d3;
+}
+
+.refresh-users-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.loading-users {
+  text-align: center;
+  padding: 20px;
+  color: #666;
+  font-style: italic;
 }
 
 .users-table {

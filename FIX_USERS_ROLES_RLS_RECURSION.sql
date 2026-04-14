@@ -1,6 +1,7 @@
 -- FIX_USERS_ROLES_RLS_RECURSION.sql
 -- Ejecuta este script en Supabase SQL Editor para corregir:
 -- "infinite recursion detected in policy for relation users_roles"
+-- Este script es idempotente (puede ejecutarse múltiples veces)
 
 begin;
 
@@ -61,13 +62,22 @@ $$;
 revoke all on function public.is_admin(uuid) from public;
 grant execute on function public.is_admin(uuid) to authenticated;
 
--- 2) Reemplazar politicas de users_roles que generan recursion.
-drop policy if exists "Usuarios pueden ver su propio perfil" on public.users_roles;
-drop policy if exists "Admins pueden ver todos los usuarios" on public.users_roles;
-drop policy if exists "Solo admin puede insertar usuarios" on public.users_roles;
-drop policy if exists "Solo admin puede actualizar roles" on public.users_roles;
-drop policy if exists "Solo admin puede eliminar usuarios" on public.users_roles;
+-- 2) Eliminar todas las políticas existentes de users_roles
+do $$
+declare
+  policy_record record;
+begin
+  for policy_record in
+    select policyname
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'users_roles'
+  loop
+    execute 'drop policy if exists "' || policy_record.policyname || '" on public.users_roles';
+  end loop;
+end $$;
 
+-- 3) Crear nuevas políticas para users_roles sin recursión
 create policy "users_roles_select_own"
 on public.users_roles
 for select
@@ -99,73 +109,55 @@ for delete
 to authenticated
 using (public.is_admin());
 
--- 3) Ajustar otras politicas relacionadas para usar helper y evitar subconsultas repetidas.
-drop policy if exists "Admins pueden ver todos los límites" on public.alert_limits;
-drop policy if exists "Admins pueden actualizar límites" on public.alert_limits;
-drop policy if exists "Solo admin puede editar límites globales" on public.alert_limits;
-drop policy if exists "Only admins can create alert limits" on public.alert_limits;
-drop policy if exists "Only admins can update alert limits" on public.alert_limits;
-drop policy if exists "Only admins can delete alert limits" on public.alert_limits;
-drop policy if exists "Admins can view all alert limits" on public.alert_limits;
-drop policy if exists "Admins can manage their alert limits" on public.alert_limits;
-
+-- 4) Eliminar todas las políticas existentes de alert_limits
 do $$
+declare
+  policy_record record;
 begin
-  if not exists (
-    select 1 from pg_policies
+  for policy_record in
+    select policyname
+    from pg_policies
     where schemaname = 'public'
       and tablename = 'alert_limits'
-      and policyname = 'alert_limits_select_admin'
-  ) then
-    create policy "alert_limits_select_admin"
-    on public.alert_limits
-    for select
-    to authenticated
-    using (public.is_admin());
-  end if;
-
-  if not exists (
-    select 1 from pg_policies
-    where schemaname = 'public'
-      and tablename = 'alert_limits'
-      and policyname = 'alert_limits_insert_admin'
-  ) then
-    create policy "alert_limits_insert_admin"
-    on public.alert_limits
-    for insert
-    to authenticated
-    with check (public.is_admin());
-  end if;
-
-  if not exists (
-    select 1 from pg_policies
-    where schemaname = 'public'
-      and tablename = 'alert_limits'
-      and policyname = 'alert_limits_update_admin'
-  ) then
-    create policy "alert_limits_update_admin"
-    on public.alert_limits
-    for update
-    to authenticated
-    using (public.is_admin())
-    with check (public.is_admin());
-  end if;
-
-  if not exists (
-    select 1 from pg_policies
-    where schemaname = 'public'
-      and tablename = 'alert_limits'
-      and policyname = 'alert_limits_delete_admin'
-  ) then
-    create policy "alert_limits_delete_admin"
-    on public.alert_limits
-    for delete
-    to authenticated
-    using (public.is_admin());
-  end if;
+  loop
+    execute 'drop policy if exists "' || policy_record.policyname || '" on public.alert_limits';
+  end loop;
 end $$;
 
--- 4) Verificacion rapida
+-- 5) Crear políticas para alert_limits sin recursión
+create policy "alert_limits_select_own"
+on public.alert_limits
+for select
+to authenticated
+using (auth.uid() = user_id);
+
+create policy "alert_limits_select_admin"
+on public.alert_limits
+for select
+to authenticated
+using (public.is_admin());
+
+create policy "alert_limits_insert_admin"
+on public.alert_limits
+for insert
+to authenticated
+with check (public.is_admin());
+
+create policy "alert_limits_update_admin"
+on public.alert_limits
+for update
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+create policy "alert_limits_delete_admin"
+on public.alert_limits
+for delete
+to authenticated
+using (public.is_admin());
+
+-- 6) Verificación rápida (descomenta para probar)
+-- Esto debería retornar true si eres admin, false si no
 -- select public.is_admin(auth.uid()) as am_i_admin;
 
 commit;

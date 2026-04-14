@@ -119,19 +119,61 @@ export async function createUserInSupabase(email, password, fullName, role) {
  */
 export async function getAllUsers() {
   try {
-    const { data, error } = await supabase
+    console.log('[getAllUsers] Iniciando carga de usuarios desde Supabase...')
+    
+    // Intento 1: Consulta específica con columnas
+    console.log('[getAllUsers] Intento 1: Consultando con columnas específicas...')
+    let { data, error, status } = await supabase
       .from('users_roles')
       .select('*')
       .order('created_at', { ascending: false })
 
+    console.log('[getAllUsers] Status HTTP:', status)
+    console.log('[getAllUsers] Error:', error)
+    console.log('[getAllUsers] Data:', data)
+    
     if (error) {
-      console.error('Error fetching users:', error)
+      console.error('[getAllUsers] Error en consulta 1:', error.message)
+    }
+
+    // Si la consulta falla o retorna vacío, intentar sin ordenamiento
+    if (error || !data || data.length === 0) {
+      console.log('[getAllUsers] Intento 2: Consultando sin ordenamiento...')
+      const { data: data2, error: error2 } = await supabase
+        .from('users_roles')
+        .select('*')
+
+      console.log('[getAllUsers] Intento 2 - Error:', error2)
+      console.log('[getAllUsers] Intento 2 - Data:', data2)
+
+      if (data2 && data2.length > 0) {
+        data = data2
+        error = null
+      } else if (error2) {
+        error = error2
+      }
+    }
+
+    if (error) {
+      console.error('[getAllUsers] ❌ Error de Supabase:', error)
+      console.error('[getAllUsers] Código:', error.code)
+      console.error('[getAllUsers] Mensaje:', error.message)
       return []
     }
 
-    return data || []
+    console.log('[getAllUsers] ✅ Usuarios obtenidos correctamente')
+    console.log('[getAllUsers] Total de usuarios:', data?.length || 0)
+    
+    if (data && data.length > 0) {
+      console.log('[getAllUsers] Usuarios encontrados:', data.map(u => ({ email: u.email, role: u.role })))
+      return data
+    } else {
+      console.warn('[getAllUsers] ⚠️ No hay usuarios en la BD')
+      return []
+    }
   } catch (error) {
-    console.error('Exception in getAllUsers:', error)
+    console.error('[getAllUsers] ❌ Excepción:', error.message)
+    console.error('[getAllUsers] Stack:', error.stack)
     return []
   }
 }
