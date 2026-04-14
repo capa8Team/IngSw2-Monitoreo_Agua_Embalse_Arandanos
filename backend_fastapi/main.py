@@ -785,48 +785,32 @@ def get_diagnostics() -> dict:
         "arduino_connected": arduino_connected,
         "last_reading": str(last_reading_time) if last_reading_time else None,
         "db": MONGODB_DB if mongodb_connected else "none",
-        "message": "Usando datos reales de MongoDB" if data_source == "real" else "Usando datos simulados dinámicos (MongoDB no disponible)",
+        "message": "Usando datos reales de MongoDB" if data_source == "real" else "Usando datos simulados",
     }
 
 
 @app.get("/api/dashboard", response_model=DashboardResponse, tags=["Dashboard"])
 def get_dashboard_data() -> DashboardResponse:
-    """Obtener datos del dashboard, actualizados desde MongoDB o datos simulados dinámicos"""
+    """Obtener datos del dashboard, usando MongoDB o fallback simulado."""
     state = update_dashboard_state_from_mongodb()
     if state is None:
-        # Generar datos simulados dinámicos si no hay datos en MongoDB
-        # Los datos varían basados en la hora actual, simulando lecturas reales
-        import math
+        simulated_payload = generate_simulated_sensor_data()
         now = chile_now()
-        
-        # Simular variación natural usando funciones trigonométricas
-        hours_elapsed = (now.hour + now.minute / 60 + now.second / 3600)
-        
-        # pH con variación leve (~6.5-7.5)
-        ph_value = 7.0 + 0.3 * math.sin(hours_elapsed * 0.26)  # Ciclo cada ~24h
-        
-        # Temperatura con variación diaria (~18-26°C)
-        temp_value = 22.0 + 3.5 * math.sin(hours_elapsed * 0.26)
-        
-        # Conductividad con variación (~800-1100)
-        conductivity_value = 950 + 100 * math.sin(hours_elapsed * 0.26)
-        
-        # Agregar pequeño ruido
-        import random
-        ph_value += random.uniform(-0.1, 0.1)
-        temp_value += random.uniform(-0.3, 0.3)
-        conductivity_value += random.uniform(-20, 20)
-        
+
         def get_status(value: float, min_val: float, max_val: float, safe_max: float) -> str:
             if value < min_val or value > max_val:
                 return "critical"
             if value > safe_max:
                 return "warning"
             return "stable"
-        
+
+        ph_value = simulated_payload.mediciones.ph
+        temperature_value = simulated_payload.mediciones.temperatura
+        conductivity_value = simulated_payload.mediciones.conductividad
+
         state = DashboardResponse(
             ph=SensorData(
-                value=round(ph_value, 2),
+                value=ph_value,
                 min=6.0,
                 max=8.5,
                 safeMax=8.0,
@@ -834,15 +818,15 @@ def get_dashboard_data() -> DashboardResponse:
                 status=get_status(ph_value, 6.0, 8.5, 8.0),
             ),
             temperature=SensorData(
-                value=round(temp_value, 2),
+                value=temperature_value,
                 min=5,
                 max=35,
                 safeMax=28,
                 lastUpdated=now,
-                status=get_status(temp_value, 5, 35, 28),
+                status=get_status(temperature_value, 5, 35, 28),
             ),
             conductivity=SensorData(
-                value=round(conductivity_value, 2),
+                value=conductivity_value,
                 min=100,
                 max=2000,
                 safeMax=1500,
@@ -850,14 +834,14 @@ def get_dashboard_data() -> DashboardResponse:
                 status=get_status(conductivity_value, 100, 2000, 1500),
             ),
             metadata=Metadata(
-                systemStatus="operational",  # Datos simulados, siempre operacional
-                arduinoConnected=True,  # Mostrar como conectado cuando hay datos simulados
+                systemStatus="operational",
+                arduinoConnected=True,
                 lastSync=now,
                 uptime=0,
                 activeSensors=3,
             ),
         )
-        logger.info("Devolviendo datos simulados dinámicos (MongoDB no disponible)")
+        logger.info("Devolviendo datos simulados (fallback)")
     return state
 
 

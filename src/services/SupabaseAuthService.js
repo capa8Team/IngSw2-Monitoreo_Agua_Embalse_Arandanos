@@ -1,4 +1,26 @@
+import { createClient } from '@supabase/supabase-js'
 import { supabase } from './supabaseClient'
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
+
+let isolatedAuthClient = null
+
+function createIsolatedAuthClient() {
+  if (isolatedAuthClient) return isolatedAuthClient
+
+  isolatedAuthClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      storageKey: 'sb-isolated-admin-create',
+    },
+  })
+
+  return isolatedAuthClient
+}
 
 /**
  * Crear un nuevo usuario en Supabase
@@ -10,44 +32,71 @@ import { supabase } from './supabaseClient'
  */
 export async function createUserInSupabase(email, password, fullName, role) {
   try {
-    // 1. Crear usuario en Auth de Supabase
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email,
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      return {
+        success: false,
+        error: 'Variables de entorno de Supabase no configuradas'
+      }
+    }
+
+    const normalizedEmail = String(email || '').trim().toLowerCase()
+    const normalizedFullName = String(fullName || '').trim()
+    const normalizedRole = role === 'admin' ? 'admin' : 'employee'
+
+    if (!EMAIL_REGEX.test(normalizedEmail)) {
+      return {
+        success: false,
+        error: 'Correo invalido. Usa formato nombre@dominio.com sin espacios.'
+      }
+    }
+
+    if (!password || String(password).length < 6) {
+      return {
+        success: false,
+        error: 'La contrasena debe tener al menos 6 caracteres.'
+      }
+    }
+
+    const isolatedClient = createIsolatedAuthClient()
+
+    // 1. Crear usuario en Auth de Supabase sin cambiar la sesión del admin actual
+    const { data: authData, error: authError } = await isolatedClient.auth.signUp({
+      email: normalizedEmail,
       password,
-      email_confirm: true
+      options: {
+        data: {
+          full_name: normalizedFullName,
+          role: normalizedRole,
+        },
+      },
     })
 
     if (authError) {
       console.error('Error creating auth user:', authError)
+      const rawMessage = authError.message || ''
+      let friendlyMessage = rawMessage
+
+      if (/Email address .* is invalid/i.test(rawMessage)) {
+        friendlyMessage = 'Correo invalido. Prueba con un correo real, por ejemplo nombre@empresa.com.'
+      } else if (/already registered/i.test(rawMessage)) {
+        friendlyMessage = 'Ese correo ya esta registrado en Supabase.'
+      } else if (/email rate limit exceeded/i.test(rawMessage)) {
+        friendlyMessage = 'Supabase bloqueo temporalmente nuevos registros por limite de envios. Espera unos minutos e intenta otra vez.'
+      } else if (/infinite recursion detected in policy for relation "users_roles"/i.test(rawMessage)) {
+        friendlyMessage = 'Error de politica RLS en users_roles (recursion). Debes aplicar el script FIX_USERS_ROLES_RLS_RECURSION.sql en Supabase.'
+      }
+
       return {
         success: false,
-        error: authError.message || 'Error al crear usuario en autenticación'
+        error: friendlyMessage || 'Error al crear usuario en autenticacion'
       }
     }
 
-    const userId = authData.user.id
-
-    // 2. Insertar en tabla users_roles
-    const { error: roleError } = await supabase
-      .from('users_roles')
-      .insert([
-        {
-          id: userId,
-          email,
-          full_name: fullName,
-          role: role === 'admin' ? 'admin' : 'employee',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }
-      ])
-
-    if (roleError) {
-      console.error('Error inserting user role:', roleError)
-      // Intentar limpiar el usuario de auth si algo falla en roles
-      await supabase.auth.admin.deleteUser(userId)
+    const userId = authData?.user?.id
+    if (!userId) {
       return {
         success: false,
-        error: roleError.message || 'Error al asignar rol al usuario'
+        error: 'No se pudo obtener el ID del usuario creado'
       }
     }
 
@@ -219,6 +268,10 @@ export async function getCurrentUser() {
     const { data, error } = await supabase.auth.getUser()
 
     if (error) {
+      const rawMessage = String(error?.message || '')
+      if (/auth session missing/i.test(rawMessage)) {
+        return null
+      }
       console.error('Error getting current user:', error)
       return null
     }

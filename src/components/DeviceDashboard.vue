@@ -24,6 +24,10 @@
         <div class="status-indicator" :class="`indicator-${overallStatus}`"></div>
         <span class="status-label">{{ overallStatusText }}</span>
       </div>
+      <div v-if="isAdmin" class="header-center admin-top-actions">
+        <button class="admin-nav-btn" @click="openAlertConfigView">Configuracion rango alertas</button>
+        <button class="admin-nav-btn" @click="openUserManagementView">Gestion de usuarios</button>
+      </div>
       <div class="header-right">
         <div class="data-source-badge" :class="`source-${selectedDevice.dataSource}`">
           <span v-if="selectedDevice.dataSource === 'real'">📊 Datos Reales</span>
@@ -86,159 +90,6 @@
             <div class="info-card-label">Rol de Usuario</div>
             <div class="info-card-value" :class="isAdmin ? 'admin-role' : 'user-role'">
               {{ isAdmin ? '👨‍💼 Administrador' : '👤 Empleado' }}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- SECCIÓN ADMIN: Configuración de Alertas -->
-      <section v-if="isAdmin" class="admin-section alerts-config-section">
-        <div class="alerts-header">
-          <h2 class="section-title">⚙️ Configuración de Rangos de Alertas (Admin)</h2>
-          <button class="collapse-btn" @click="showAlertsConfig = !showAlertsConfig">
-            {{ showAlertsConfig ? '▼ Ocultar' : '► Mostrar' }}
-          </button>
-        </div>
-
-        <div v-if="showAlertsConfig" class="alerts-config-grid">
-          <!-- pH Config -->
-          <div class="alert-config-card">
-            <h3>🔬 pH</h3>
-            <div class="config-group">
-              <label>Mínimo:</label>
-              <input v-model.number="SENSOR_LIMITS.ph.min" type="number" step="0.1" />
-            </div>
-            <div class="config-group">
-              <label>Máximo:</label>
-              <input v-model.number="SENSOR_LIMITS.ph.max" type="number" step="0.1" />
-            </div>
-            <div class="config-group">
-              <label>Máximo Seguro:</label>
-              <input v-model.number="SENSOR_LIMITS.ph.safeMax" type="number" step="0.1" />
-            </div>
-            <button class="save-config-btn" @click="saveAlertConfig('ph')">Guardar pH</button>
-          </div>
-
-          <!-- Temperature Config -->
-          <div class="alert-config-card">
-            <h3>🌡️ Temperatura (°C)</h3>
-            <div class="config-group">
-              <label>Mínimo:</label>
-              <input v-model.number="SENSOR_LIMITS.temperature.min" type="number" step="1" />
-            </div>
-            <div class="config-group">
-              <label>Máximo:</label>
-              <input v-model.number="SENSOR_LIMITS.temperature.max" type="number" step="1" />
-            </div>
-            <div class="config-group">
-              <label>Máximo Seguro:</label>
-              <input v-model.number="SENSOR_LIMITS.temperature.safeMax" type="number" step="1" />
-            </div>
-            <button class="save-config-btn" @click="saveAlertConfig('temperature')">Guardar Temperatura</button>
-          </div>
-
-          <!-- Conductivity Config -->
-          <div class="alert-config-card">
-            <h3>⚡ Conductividad (µS/cm)</h3>
-            <div class="config-group">
-              <label>Mínimo:</label>
-              <input v-model.number="SENSOR_LIMITS.conductivity.min" type="number" step="10" />
-            </div>
-            <div class="config-group">
-              <label>Máximo:</label>
-              <input v-model.number="SENSOR_LIMITS.conductivity.max" type="number" step="10" />
-            </div>
-            <div class="config-group">
-              <label>Máximo Seguro:</label>
-              <input v-model.number="SENSOR_LIMITS.conductivity.safeMax" type="number" step="10" />
-            </div>
-            <button class="save-config-btn" @click="saveAlertConfig('conductivity')">Guardar Conductividad</button>
-          </div>
-        </div>
-      </section>
-
-      <!-- SECCIÓN ADMIN: Gestión de Usuarios -->
-      <section v-if="isAdmin" class="admin-section user-management-section">
-        <div class="alerts-header">
-          <h2 class="section-title">👥 Gestión de Usuarios (Admin)</h2>
-          <button class="collapse-btn" @click="showUserManagement = !showUserManagement">
-            {{ showUserManagement ? '▼ Ocultar' : '► Mostrar' }}
-          </button>
-        </div>
-
-        <div v-if="showUserManagement" class="user-management-content">
-          <div class="user-creation-form">
-            <h3>Crear Nueva Cuenta</h3>
-            <div class="form-grid">
-              <div class="form-group">
-                <label>Email:</label>
-                <input v-model="newUser.email" type="email" placeholder="usuario@empresa.com" />
-              </div>
-              <div class="form-group">
-                <label>Contraseña:</label>
-                <input v-model="newUser.password" type="password" placeholder="••••••••" />
-              </div>
-              <div class="form-group">
-                <label>Nombre Completo:</label>
-                <input v-model="newUser.fullName" type="text" placeholder="Juan Pérez" />
-              </div>
-              <div class="form-group">
-                <label>Rol:</label>
-                <select v-model="newUser.role">
-                  <option value="employee">Empleado</option>
-                  <option value="admin">Administrador</option>
-                </select>
-              </div>
-            </div>
-
-            <div v-if="userCreationError" class="error-message">
-              {{ userCreationError }}
-            </div>
-            <div v-if="userCreationSuccess" class="success-message">
-              {{ userCreationSuccess }}
-            </div>
-
-            <button 
-              class="create-user-btn"
-              @click="createNewUser"
-              :disabled="isCreatingUser"
-            >
-              {{ isCreatingUser ? 'Creando...' : '✅ Crear Usuario' }}
-            </button>
-          </div>
-
-          <div class="users-list">
-            <h3>Usuarios Existentes</h3>
-            <div v-if="existingUsers.length > 0" class="users-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Email</th>
-                    <th>Nombre</th>
-                    <th>Rol</th>
-                    <th>Creado</th>
-                    <th>Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="user in existingUsers" :key="user.id">
-                    <td>{{ user.email }}</td>
-                    <td>{{ user.full_name || 'N/A' }}</td>
-                    <td>
-                      <span class="role-badge" :class="`role-${user.role}`">
-                        {{ user.role === 'admin' ? '👨‍💼 Admin' : '👤 Employee' }}
-                      </span>
-                    </td>
-                    <td>{{ formatDate(user.created_at) }}</td>
-                    <td>
-                      <button class="delete-user-btn" @click="deleteUser(user.id)">Eliminar</button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <div v-else class="no-users">
-              No hay usuarios registrados aún.
             </div>
           </div>
         </div>
@@ -324,6 +175,208 @@
     </main>
   </div>
 
+  <div v-else-if="currentView === 'admin-alerts'" class="dashboard">
+    <header class="dashboard-header">
+      <div class="header-content">
+        <button class="back-btn" @click="goToDashboardView" title="Volver al dashboard">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+            <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+          </svg>
+        </button>
+        <div>
+          <h1 class="header-title">Configuracion rango alertas</h1>
+          <p class="header-subtitle">Define umbrales por sensor para dashboard y alertas</p>
+        </div>
+      </div>
+      <div class="header-center admin-top-actions">
+        <button class="admin-nav-btn active">Configuracion rango alertas</button>
+        <button class="admin-nav-btn" @click="openUserManagementView">Gestion de usuarios</button>
+      </div>
+      <div class="header-right">
+        <div class="data-source-badge" :class="`source-${selectedDevice.dataSource}`">
+          <span v-if="selectedDevice.dataSource === 'real'">📊 Datos Reales</span>
+          <span v-else-if="selectedDevice.dataSource === 'simulated'">⚙️ Datos Simulados</span>
+          <span v-else>❓ Fuente Desconocida</span>
+        </div>
+        <button class="logout-btn" @click="handleLogout">🚪 Logout</button>
+      </div>
+    </header>
+
+    <main class="dashboard-content">
+      <section class="alerts-config-section">
+        <div class="alerts-header">
+          <h2 class="section-title">Configuracion de rangos por sensor</h2>
+        </div>
+
+        <div class="alerts-config-grid">
+          <div class="alert-config-card">
+            <h3>🔬 pH</h3>
+            <div class="config-group">
+              <label>Minimo:</label>
+              <input v-model.number="SENSOR_LIMITS.ph.min" type="number" step="0.1" />
+            </div>
+            <div class="config-group">
+              <label>Maximo:</label>
+              <input v-model.number="SENSOR_LIMITS.ph.max" type="number" step="0.1" />
+            </div>
+            <div class="config-group">
+              <label>Maximo seguro:</label>
+              <input v-model.number="SENSOR_LIMITS.ph.safeMax" type="number" step="0.1" />
+            </div>
+            <button class="save-config-btn" @click="saveAlertConfig('ph')">Guardar pH</button>
+          </div>
+
+          <div class="alert-config-card">
+            <h3>🌡️ Temperatura (°C)</h3>
+            <div class="config-group">
+              <label>Minimo:</label>
+              <input v-model.number="SENSOR_LIMITS.temperature.min" type="number" step="1" />
+            </div>
+            <div class="config-group">
+              <label>Maximo:</label>
+              <input v-model.number="SENSOR_LIMITS.temperature.max" type="number" step="1" />
+            </div>
+            <div class="config-group">
+              <label>Maximo seguro:</label>
+              <input v-model.number="SENSOR_LIMITS.temperature.safeMax" type="number" step="1" />
+            </div>
+            <button class="save-config-btn" @click="saveAlertConfig('temperature')">Guardar temperatura</button>
+          </div>
+
+          <div class="alert-config-card">
+            <h3>⚡ Conductividad (µS/cm)</h3>
+            <div class="config-group">
+              <label>Minimo:</label>
+              <input v-model.number="SENSOR_LIMITS.conductivity.min" type="number" step="10" />
+            </div>
+            <div class="config-group">
+              <label>Maximo:</label>
+              <input v-model.number="SENSOR_LIMITS.conductivity.max" type="number" step="10" />
+            </div>
+            <div class="config-group">
+              <label>Maximo seguro:</label>
+              <input v-model.number="SENSOR_LIMITS.conductivity.safeMax" type="number" step="10" />
+            </div>
+            <button class="save-config-btn" @click="saveAlertConfig('conductivity')">Guardar conductividad</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div v-else-if="currentView === 'admin-users'" class="dashboard">
+    <header class="dashboard-header">
+      <div class="header-content">
+        <button class="back-btn" @click="goToDashboardView" title="Volver al dashboard">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+            <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+          </svg>
+        </button>
+        <div>
+          <h1 class="header-title">Gestion de usuarios</h1>
+          <p class="header-subtitle">Crea cuentas y administra roles en Supabase</p>
+        </div>
+      </div>
+      <div class="header-center admin-top-actions">
+        <button class="admin-nav-btn" @click="openAlertConfigView">Configuracion rango alertas</button>
+        <button class="admin-nav-btn active">Gestion de usuarios</button>
+      </div>
+      <div class="header-right">
+        <div class="data-source-badge" :class="`source-${selectedDevice.dataSource}`">
+          <span v-if="selectedDevice.dataSource === 'real'">📊 Datos Reales</span>
+          <span v-else-if="selectedDevice.dataSource === 'simulated'">⚙️ Datos Simulados</span>
+          <span v-else>❓ Fuente Desconocida</span>
+        </div>
+        <button class="logout-btn" @click="handleLogout">🚪 Logout</button>
+      </div>
+    </header>
+
+    <main class="dashboard-content">
+      <section class="user-management-section">
+        <div class="alerts-header">
+          <h2 class="section-title">Administracion de cuentas</h2>
+        </div>
+
+        <div class="user-management-content">
+          <div class="user-creation-form">
+            <h3>Crear nueva cuenta</h3>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Email:</label>
+                <input v-model="newUser.email" type="email" placeholder="usuario@empresa.com" />
+              </div>
+              <div class="form-group">
+                <label>Contrasena:</label>
+                <input v-model="newUser.password" type="password" placeholder="********" />
+              </div>
+              <div class="form-group">
+                <label>Nombre completo:</label>
+                <input v-model="newUser.fullName" type="text" placeholder="Juan Perez" />
+              </div>
+              <div class="form-group">
+                <label>Rol:</label>
+                <select v-model="newUser.role">
+                  <option value="employee">Trabajador</option>
+                  <option value="admin">Administrador</option>
+                </select>
+              </div>
+            </div>
+
+            <div v-if="userCreationError" class="error-message">
+              {{ userCreationError }}
+            </div>
+            <div v-if="userCreationSuccess" class="success-message">
+              {{ userCreationSuccess }}
+            </div>
+
+            <button
+              class="create-user-btn"
+              @click="createNewUser"
+              :disabled="isCreatingUser"
+            >
+              {{ isCreatingUser ? 'Creando...' : 'Crear usuario' }}
+            </button>
+          </div>
+
+          <div class="users-list">
+            <h3>Usuarios existentes</h3>
+            <div v-if="existingUsers.length > 0" class="users-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Email</th>
+                    <th>Nombre</th>
+                    <th>Rol</th>
+                    <th>Creado</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="user in existingUsers" :key="user.id">
+                    <td>{{ user.email }}</td>
+                    <td>{{ user.full_name || 'N/A' }}</td>
+                    <td>
+                      <span class="role-badge" :class="`role-${user.role}`">
+                        {{ user.role === 'admin' ? 'Admin' : 'Trabajador' }}
+                      </span>
+                    </td>
+                    <td>{{ formatDate(user.created_at) }}</td>
+                    <td>
+                      <button class="delete-user-btn" @click="deleteUser(user.id)">Eliminar</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-else class="no-users">
+              No hay usuarios registrados aun.
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
   <div v-else class="history-view">
     <header class="dashboard-header">
       <div class="header-content">
@@ -336,6 +389,10 @@
           <h1 class="header-title">Registro Histórico</h1>
           <p class="header-subtitle">Todas las mediciones guardadas por dispositivo y fecha</p>
         </div>
+      </div>
+      <div v-if="isAdmin" class="header-center admin-top-actions">
+        <button class="admin-nav-btn" @click="openAlertConfigView">Configuracion rango alertas</button>
+        <button class="admin-nav-btn" @click="openUserManagementView">Gestion de usuarios</button>
       </div>
       <button class="pdf-btn" @click="downloadHistoryPdf">Descargar PDF</button>
     </header>
@@ -460,8 +517,6 @@ const currentView = ref('devices')
 const selectedDeviceId = ref(null)
 const lastSync = ref('Sin datos del Arduino')
 const showAllTodayAlerts = ref(false)
-const showAlertsConfig = ref(false)
-const showUserManagement = ref(false)
 
 // Detectar si es admin
 const isAdmin = computed(() => {
@@ -820,6 +875,21 @@ const openHistory = () => {
   loadHistoryFromApi()
 }
 
+const openAlertConfigView = () => {
+  if (!isAdmin.value) return
+  currentView.value = 'admin-alerts'
+}
+
+const openUserManagementView = async () => {
+  if (!isAdmin.value) return
+  currentView.value = 'admin-users'
+  await loadExistingUsers()
+}
+
+const goToDashboardView = () => {
+  currentView.value = 'dashboard'
+}
+
 const goBack = () => {
   currentView.value = 'devices'
 }
@@ -870,12 +940,25 @@ const saveAlertConfig = async (sensorType) => {
 }
 
 const createNewUser = async () => {
+  const sanitizedEmail = String(newUser.value.email || '').trim().toLowerCase()
+  const sanitizedFullName = String(newUser.value.fullName || '').trim()
+
   // Validar campos
-  if (!newUser.value.email || !newUser.value.password || !newUser.value.fullName) {
+  if (!sanitizedEmail || !newUser.value.password || !sanitizedFullName) {
     userCreationError.value = 'Por favor completa todos los campos'
     userCreationSuccess.value = ''
     return
   }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
+  if (!emailRegex.test(sanitizedEmail)) {
+    userCreationError.value = 'Correo invalido. Usa formato nombre@dominio.com sin espacios.'
+    userCreationSuccess.value = ''
+    return
+  }
+
+  newUser.value.email = sanitizedEmail
+  newUser.value.fullName = sanitizedFullName
 
   isCreatingUser.value = true
   userCreationError.value = ''
@@ -890,7 +973,7 @@ const createNewUser = async () => {
     )
 
     if (result.success) {
-      userCreationSuccess.value = `Usuario ${newUser.value.email} creado exitosamente`
+      userCreationSuccess.value = `Usuario ${sanitizedEmail} creado exitosamente`
       newUser.value = {
         email: '',
         password: '',
@@ -1063,10 +1146,44 @@ onUnmounted(() => {
   flex: 1;
 }
 
+.header-center {
+  display: flex;
+  justify-content: center;
+  flex: 1;
+}
+
 .header-right {
   display: flex;
   align-items: center;
   gap: 16px;
+  justify-content: flex-end;
+}
+
+.admin-top-actions {
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.admin-nav-btn {
+  border: 1px solid #ff9800;
+  background: #ffffff;
+  color: #a85c00;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.admin-nav-btn:hover {
+  background: #fff3e0;
+}
+
+.admin-nav-btn.active {
+  background: #ff9800;
+  color: #ffffff;
+  border-color: #ff9800;
 }
 
 .logout-btn {
@@ -1723,6 +1840,11 @@ onUnmounted(() => {
   .pdf-btn {
     width: 100%;
   }
+
+  .header-center {
+    width: 100%;
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 768px) {
@@ -1748,6 +1870,15 @@ onUnmounted(() => {
   .header-status {
     width: 100%;
     justify-content: center;
+  }
+
+  .admin-top-actions {
+    width: 100%;
+  }
+
+  .admin-nav-btn {
+    flex: 1;
+    min-width: 0;
   }
 
   .dashboard-content {

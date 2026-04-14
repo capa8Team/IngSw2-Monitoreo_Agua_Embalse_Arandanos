@@ -66,6 +66,9 @@ export const authService = {
       if (error) throw error
       return user
     } catch (error) {
+      if (/auth session missing/i.test(String(error?.message || ''))) {
+        return null
+      }
       console.error('Error obteniendo usuario:', error)
       return null
     }
