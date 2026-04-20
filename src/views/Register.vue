@@ -139,7 +139,7 @@ const handleRegister = async () => {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   padding: 20px;
 }
@@ -147,7 +147,8 @@ const handleRegister = async () => {
 .register-box {
   background: white;
   border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  border: 2px solid #66bb6a;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   padding: 40px;
   width: 100%;
   max-width: 450px;
@@ -160,13 +161,13 @@ const handleRegister = async () => {
 
 .register-header h1 {
   margin: 0;
-  color: #333;
+  color: #66bb6a;
   font-size: 28px;
 }
 
 .register-header p {
   margin: 8px 0 0 0;
-  color: #666;
+  color: #888888;
   font-size: 14px;
 }
 
@@ -184,22 +185,24 @@ const handleRegister = async () => {
 
 .form-group label {
   font-weight: 600;
-  color: #333;
+  color: #333333;
   font-size: 14px;
 }
 
 .form-group input {
   padding: 12px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid #e8e8e8;
   border-radius: 6px;
   font-size: 14px;
-  transition: border-color 0.3s;
+  transition: border-color 0.3s, box-shadow 0.3s;
+  background-color: #ffffff;
+  color: #333333;
 }
 
 .form-group input:focus {
   outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  border-color: #66bb6a;
+  box-shadow: 0 0 0 3px rgba(102, 187, 106, 0.1);
 }
 
 .form-group small {
@@ -228,40 +231,46 @@ const handleRegister = async () => {
 
 .register-btn {
   padding: 12px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background-color: #66bb6a;
   color: white;
-  border: none;
+  border: 2px solid #66bb6a;
   border-radius: 6px;
   font-weight: 600;
   font-size: 16px;
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: all 0.3s ease;
 }
 
 .register-btn:hover:not(:disabled) {
+  background-color: #5aa859;
+  border-color: #5aa859;
+  box-shadow: 0 4px 12px rgba(102, 187, 106, 0.3);
   transform: translateY(-2px);
-  box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
 }
 
 .register-btn:disabled {
-  opacity: 0.7;
+  opacity: 0.6;
   cursor: not-allowed;
+  background-color: #99cc99;
+  border-color: #99cc99;
 }
 
 .register-footer {
   text-align: center;
   margin-top: 20px;
   font-size: 14px;
-  color: #666;
+  color: #888888;
 }
 
 .register-footer a {
-  color: #667eea;
+  color: #66bb6a;
   text-decoration: none;
   font-weight: 600;
+  transition: color 0.3s;
 }
 
 .register-footer a:hover {
+  color: #5aa859;
   text-decoration: underline;
 }
 </style>

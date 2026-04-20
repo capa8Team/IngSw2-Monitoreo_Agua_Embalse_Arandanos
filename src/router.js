@@ -4,6 +4,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 const Login = () => import('./views/Login.vue')
 const Register = () => import('./views/Register.vue')
 const DeviceDashboard = () => import('./components/DeviceDashboard.vue')
+const HistoricalData = () => import('./views/HistoricalData.vue')
 
 const routes = [
   {
@@ -31,6 +32,18 @@ const routes = [
     meta: { title: 'Dashboard' },
   },
 
+  // Datos históricos - Accesible para empleado y administrador
+  {
+    path: '/historical',
+    name: 'HistoricalData',
+    component: HistoricalData,
+    meta: { 
+      title: 'Datos Históricos',
+      requiresAuth: true,
+      roles: ['empleado', 'administrador']
+    },
+  },
+
   // Catch-all para rutas no encontradas
   {
     path: '/:pathMatch(.*)*',
@@ -56,6 +69,16 @@ router.beforeEach((to, from, next) => {
     if (!isAuthenticated) {
       next('/login')
       return
+    }
+
+    // Verificar roles si se requieren
+    if (to.meta.roles && to.meta.roles.length > 0) {
+      const userRole = localStorage.getItem('userRole')
+      if (!userRole || !to.meta.roles.includes(userRole)) {
+        console.warn(`Acceso denegado: rol requerido ${to.meta.roles.join(', ')}, rol actual: ${userRole}`)
+        next('/dashboard')
+        return
+      }
     }
   }
 

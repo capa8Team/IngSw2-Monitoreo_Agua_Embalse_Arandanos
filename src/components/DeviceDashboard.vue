@@ -34,6 +34,7 @@
           <span v-else-if="selectedDevice.dataSource === 'simulated'">⚙️ Datos Simulados</span>
           <span v-else>❓ Fuente Desconocida</span>
         </div>
+        <button class="history-btn" @click="openHistory" title="Ver datos históricos">📈 Históricos</button>
         <button class="logout-btn" @click="handleLogout">🚪 Logout</button>
       </div>
     </header>
@@ -877,8 +878,7 @@ const selectDevice = (device) => {
 }
 
 const openHistory = () => {
-  currentView.value = 'history'
-  loadHistoryFromApi()
+  router.push('/historical')
 }
 
 const openAlertConfigView = () => {
@@ -1212,6 +1212,23 @@ onUnmounted(() => {
   background: #ff9800;
   color: #ffffff;
   border-color: #ff9800;
+}
+
+.history-btn {
+  background: #66bb6a;
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.3s;
+}
+
+.history-btn:hover {
+  background: #5aa859;
+  box-shadow: 0 2px 8px rgba(102, 187, 106, 0.3);
 }
 
 .logout-btn {

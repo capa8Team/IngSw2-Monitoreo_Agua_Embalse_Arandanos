@@ -1,117 +1,368 @@
 <template>
   <div class="historical-view">
-    <header class="history-header">
-      <h1>📊 Datos Históricos</h1>
-      <div class="header-controls">
-        <button class="logout-btn" @click="handleLogout">Cerrar Sesión</button>
+    <div class="history-header">
+      <div class="header-left">
+        <button class="back-btn" @click="goBack">← Volver</button>
+        <h1>Datos Históricos</h1>
       </div>
-    </header>
+      <button class="pdf-btn" @click="downloadPDF">📥 Descargar PDF</button>
+    </div>
 
     <main class="history-content">
-      <div class="filters">
-        <div class="filter-group">
-          <label>Fecha Inicio</label>
-          <input v-model="filters.startDate" type="date" />
+      <!-- pH Chart -->
+      <div class="chart-wrapper">
+        <div class="chart-title">
+          <h3>pH</h3>
+          <div class="period-buttons">
+            <button 
+              @click="phPeriod = 'day'" 
+              :class="{ active: phPeriod === 'day' }"
+              class="period-btn"
+            >
+              1 día
+            </button>
+            <button 
+              @click="phPeriod = 'week'" 
+              :class="{ active: phPeriod === 'week' }"
+              class="period-btn"
+            >
+              1 semana
+            </button>
+          </div>
         </div>
-        <div class="filter-group">
-          <label>Fecha Fin</label>
-          <input v-model="filters.endDate" type="date" />
+        <div class="chart-container">
+          <canvas ref="phChartRef"></canvas>
         </div>
-        <div class="filter-group">
-          <label>Sensor</label>
-          <select v-model="filters.sensor">
-            <option value="">Todos los sensores</option>
-            <option value="ph">pH</option>
-            <option value="temperature">Temperatura</option>
-            <option value="turbidity">Turbidez</option>
-          </select>
+        <div class="measurements">
+          <span>Máx: {{ chartStats.ph.max.toFixed(2) }}</span>
+          <span>Mín: {{ chartStats.ph.min.toFixed(2) }}</span>
+          <span>Prom: {{ chartStats.ph.avg.toFixed(2) }}</span>
         </div>
-        <button @click="applyFilters" class="apply-btn">Aplicar Filtros</button>
       </div>
 
-      <div class="data-table">
-        <table>
-          <thead>
-            <tr>
-              <th>Fecha</th>
-              <th>Sensor</th>
-              <th>Valor</th>
-              <th>Unidad</th>
-              <th>Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="record in historicalData" :key="record.id">
-              <td>{{ formatDate(record.timestamp) }}</td>
-              <td>{{ record.sensorName }}</td>
-              <td>{{ record.value.toFixed(2) }}</td>
-              <td>{{ record.unit }}</td>
-              <td>
-                <span class="status" :class="`status-${record.status}`">
-                  {{ record.status }}
-                </span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <!-- Temperature Chart -->
+      <div class="chart-wrapper">
+        <div class="chart-title">
+          <h3>Temperatura (°C)</h3>
+          <div class="period-buttons">
+            <button 
+              @click="tempPeriod = 'day'" 
+              :class="{ active: tempPeriod === 'day' }"
+              class="period-btn"
+            >
+              1 día
+            </button>
+            <button 
+              @click="tempPeriod = 'week'" 
+              :class="{ active: tempPeriod === 'week' }"
+              class="period-btn"
+            >
+              1 semana
+            </button>
+          </div>
+        </div>
+        <div class="chart-container">
+          <canvas ref="tempChartRef"></canvas>
+        </div>
+        <div class="measurements">
+          <span>Máx: {{ chartStats.temperature.max.toFixed(2) }}</span>
+          <span>Mín: {{ chartStats.temperature.min.toFixed(2) }}</span>
+          <span>Prom: {{ chartStats.temperature.avg.toFixed(2) }}</span>
+        </div>
+      </div>
+
+      <!-- Conductivity Chart -->
+      <div class="chart-wrapper">
+        <div class="chart-title">
+          <h3>Conductividad (µS/cm)</h3>
+          <div class="period-buttons">
+            <button 
+              @click="condPeriod = 'day'" 
+              :class="{ active: condPeriod === 'day' }"
+              class="period-btn"
+            >
+              1 día
+            </button>
+            <button 
+              @click="condPeriod = 'week'" 
+              :class="{ active: condPeriod === 'week' }"
+              class="period-btn"
+            >
+              1 semana
+            </button>
+          </div>
+        </div>
+        <div class="chart-container">
+          <canvas ref="condChartRef"></canvas>
+        </div>
+        <div class="measurements">
+          <span>Máx: {{ chartStats.conductivity.max.toFixed(2) }}</span>
+          <span>Mín: {{ chartStats.conductivity.min.toFixed(2) }}</span>
+          <span>Prom: {{ chartStats.conductivity.avg.toFixed(2) }}</span>
+        </div>
       </div>
     </main>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, reactive, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/authStore'
+import Chart from 'chart.js/auto'
 
 const router = useRouter()
 const authStore = useAuthStore()
 
-const filters = ref({
-  startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-  endDate: new Date().toISOString().split('T')[0],
-  sensor: '',
+const phPeriod = ref('day')
+const tempPeriod = ref('day')
+const condPeriod = ref('day')
+
+const phChartRef = ref(null)
+const tempChartRef = ref(null)
+const condChartRef = ref(null)
+
+let phChart = null
+let tempChart = null
+let condChart = null
+
+const chartStats = reactive({
+  ph: { max: 8.5, min: 6.0, avg: 7.2 },
+  temperature: { max: 28, min: 18, avg: 22.5 },
+  conductivity: { max: 1500, min: 800, avg: 1100 },
 })
 
-const historicalData = ref([
-  {
-    id: 1,
-    timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
-    sensorName: 'pH',
-    value: 7.2,
-    unit: 'pH',
-    status: 'normal',
-  },
-  {
-    id: 2,
-    timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
-    sensorName: 'Temperatura',
-    value: 22.5,
-    unit: '°C',
-    status: 'normal',
-  },
-  {
-    id: 3,
-    timestamp: new Date(),
-    sensorName: 'Turbidez',
-    value: 1.2,
-    unit: 'NTU',
-    status: 'normal',
-  },
-])
+const generateMockData = async (type, period) => {
+  try {
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+    console.log(`[DEBUG] Fetching from ${apiUrl}/api/dashboard for type: ${type}`)
+    const response = await fetch(`${apiUrl}/api/dashboard`)
+    const data = await response.json()
+    console.log(`[DEBUG] API response:`, data)
+    
+    const now = new Date()
+    const dataPoints = period === 'day' ? 24 : 7
+    const labels = []
+    const values = []
+    
+    let baseValue = 0, maxVal = 0, minVal = 0
 
-const formatDate = (date) => {
-  return new Date(date).toLocaleString('es-ES')
+    // Extraer el valor base del sensor correspondiente
+    if (type === 'ph') {
+      baseValue = data.ph?.value || 7.2
+      maxVal = data.ph?.max || 8.5
+      minVal = data.ph?.min || 6.0
+    } else if (type === 'temperature') {
+      baseValue = data.temperature?.value || 22.5
+      maxVal = data.temperature?.max || 28
+      minVal = data.temperature?.min || 18
+    } else if (type === 'conductivity') {
+      baseValue = data.conductivity?.value || 1100
+      maxVal = data.conductivity?.max || 1500
+      minVal = data.conductivity?.min || 800
+    }
+
+    // Generar datos históricos simulados basados en el valor actual
+    for (let i = 0; i < dataPoints; i++) {
+      const date = new Date(now)
+      if (period === 'day') {
+        date.setHours(i, 0, 0, 0)
+        labels.push(`${String(i).padStart(2, '0')}:00`)
+      } else {
+        date.setDate(date.getDate() - (6 - i))
+        labels.push(date.toLocaleDateString('es-ES', { weekday: 'short' }))
+      }
+      
+      // Agregar pequeña variación al valor real (±5% del rango)
+      const variance = (maxVal - minVal) * 0.05
+      const value = baseValue + (Math.random() - 0.5) * variance
+      values.push(Math.max(minVal, Math.min(maxVal, value)))
+    }
+
+    const avg = values.reduce((a, b) => a + b, 0) / values.length
+    const max = Math.max(...values)
+    const min = Math.min(...values)
+    
+    console.log(`[DEBUG] Generated data for ${type}:`, { labels: labels.length, values: values.length, avg, max, min })
+
+    return { labels, data: values, avg, max, min }
+  } catch (error) {
+    console.error('Error fetching data:', error)
+    // Fallback a datos locales si hay error
+    const dataPoints = period === 'day' ? 24 : 7
+    const labels = []
+    const data = []
+    
+    let baseValue = 0, maxVal = 0, minVal = 0
+    
+    if (type === 'ph') {
+      baseValue = 7.2; maxVal = 8.5; minVal = 6.0
+    } else if (type === 'temperature') {
+      baseValue = 22.5; maxVal = 28; minVal = 18
+    } else if (type === 'conductivity') {
+      baseValue = 1100; maxVal = 1500; minVal = 800
+    }
+
+    for (let i = 0; i < dataPoints; i++) {
+      const now = new Date()
+      if (period === 'day') {
+        now.setHours(i, 0, 0, 0)
+        labels.push(`${String(i).padStart(2, '0')}:00`)
+      } else {
+        now.setDate(now.getDate() - (6 - i))
+        labels.push(now.toLocaleDateString('es-ES', { weekday: 'short' }))
+      }
+      
+      const variance = (maxVal - minVal) * 0.05
+      const value = baseValue + (Math.random() - 0.5) * variance
+      data.push(Math.max(minVal, Math.min(maxVal, value)))
+    }
+    
+    const avg = data.reduce((a, b) => a + b, 0) / data.length
+    return { labels, data, avg, max: Math.max(...data), min: Math.min(...data) }
+  }
 }
 
-const applyFilters = () => {
-  // Aquí iría la lógica para filtrar los datos
-  console.log('Filtros aplicados:', filters.value)
+const updateCharts = async () => {
+  console.log('[DEBUG] updateCharts called')
+  const phData = await generateMockData('ph', phPeriod.value)
+  const tempData = await generateMockData('temperature', tempPeriod.value)
+  const condData = await generateMockData('conductivity', condPeriod.value)
+
+  chartStats.ph = { max: phData.max, min: phData.min, avg: phData.avg }
+  chartStats.temperature = { max: tempData.max, min: tempData.min, avg: tempData.avg }
+  chartStats.conductivity = { max: condData.max, min: condData.min, avg: condData.avg }
+
+  if (phChart) {
+    phChart.data.labels = phData.labels
+    phChart.data.datasets[0].data = phData.data
+    phChart.update('none')
+    console.log('[DEBUG] pH chart updated')
+  } else if (phChartRef.value) {
+    createChart(phChartRef, phData, 'pH', 6, 8.5, phChart, 'phChart')
+    console.log('[DEBUG] pH chart created')
+  }
+
+  if (tempChart) {
+    tempChart.data.labels = tempData.labels
+    tempChart.data.datasets[0].data = tempData.data
+    tempChart.update('none')
+    console.log('[DEBUG] Temperature chart updated')
+  } else if (tempChartRef.value) {
+    createChart(tempChartRef, tempData, 'Temperatura (°C)', 15, 30, tempChart, 'tempChart')
+    console.log('[DEBUG] Temperature chart created')
+  }
+
+  if (condChart) {
+    condChart.data.labels = condData.labels
+    condChart.data.datasets[0].data = condData.data
+    condChart.update('none')
+    console.log('[DEBUG] Conductivity chart updated')
+  } else if (condChartRef.value) {
+    createChart(condChartRef, condData, 'Conductividad (µS/cm)', 700, 1600, condChart, 'condChart')
+    console.log('[DEBUG] Conductivity chart created')
+  }
 }
 
-const handleLogout = async () => {
-  await authStore.logout()
-  router.push('/login')
+const createChart = (chartRef, data, label, minVal, maxVal, chartInstance, varName) => {
+  if (chartInstance) chartInstance.destroy()
+  
+  const ctx = chartRef.value.getContext('2d')
+  const newChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: data.labels,
+      datasets: [{
+        label: label,
+        data: data.data,
+        borderColor: '#66bb6a',
+        backgroundColor: 'rgba(102, 187, 106, 0.08)',
+        borderWidth: 2.5,
+        fill: true,
+        tension: 0.3,
+        pointBackgroundColor: '#66bb6a',
+        pointBorderColor: '#fff',
+        pointBorderWidth: 2,
+        pointRadius: 3,
+        pointHoverRadius: 5,
+      }]
+    },
+    options: {
+      responsive: false,
+      maintainAspectRatio: false,
+      animation: { duration: 0 },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+          padding: 8,
+          titleFont: { size: 11 },
+          bodyFont: { size: 11 },
+        }
+      },
+      scales: {
+        y: { 
+          min: minVal, 
+          max: maxVal, 
+          ticks: { color: '#666', font: { size: 10 } }, 
+          grid: { color: 'rgba(0, 0, 0, 0.04)' },
+          beginAtZero: false,
+          title: { display: true, text: label, font: { size: 11, weight: 'bold' }, color: '#66bb6a' }
+        },
+        x: { 
+          ticks: { color: '#666', font: { size: 10 } }, 
+          grid: { display: false } 
+        }
+      }
+    }
+  })
+  
+  // Actualizar la referencia global
+  if (varName === 'phChart') phChart = newChart
+  else if (varName === 'tempChart') tempChart = newChart
+  else if (varName === 'condChart') condChart = newChart
+}
+
+watch(phPeriod, async () => {
+  await updateCharts()
+})
+
+watch(tempPeriod, async () => {
+  await updateCharts()
+})
+
+watch(condPeriod, async () => {
+  await updateCharts()
+})
+
+let updateInterval = null
+
+onMounted(async () => {
+  await nextTick()
+  await updateCharts()
+  // Actualizar datos cada 5 segundos
+  updateInterval = setInterval(async () => {
+    try {
+      await updateCharts()
+    } catch (error) {
+      console.error('Error actualizando gráficos:', error)
+    }
+  }, 5000)
+})
+
+onBeforeUnmount(() => {
+  if (updateInterval) clearInterval(updateInterval)
+  if (phChart) phChart.destroy()
+  if (tempChart) tempChart.destroy()
+  if (condChart) condChart.destroy()
+})
+
+const goBack = () => {
+  router.back()
+}
+
+const downloadPDF = () => {
+  alert('Función de descarga PDF en desarrollo')
 }
 </script>
 
@@ -124,147 +375,148 @@ const handleLogout = async () => {
 }
 
 .history-header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 20px;
+  background: white;
+  color: #333;
+  padding: 14px 20px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  border-bottom: 2px solid #66bb6a;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.back-btn {
+  width: 36px;
+  height: 36px;
+  border: 1px solid #e0e0e0;
+  background: white;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #333;
+  transition: all 0.2s;
+}
+
+.back-btn:hover {
+  background: #f0f0f0;
+  border-color: #66bb6a;
 }
 
 .history-header h1 {
   margin: 0;
-  font-size: 24px;
-}
-
-.header-controls {
-  display: flex;
-  gap: 10px;
-}
-
-.logout-btn {
-  padding: 8px 16px;
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 600;
-  transition: background 0.3s;
-}
-
-.logout-btn:hover {
-  background: rgba(255, 255, 255, 0.3);
-}
-
-.history-content {
-  flex: 1;
-  padding: 20px;
-  overflow-y: auto;
-}
-
-.filters {
-  background: white;
-  padding: 20px;
-  border-radius: 8px;
-  margin-bottom: 20px;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 15px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.filter-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.filter-group label {
+  font-size: 20px;
   font-weight: 600;
   color: #333;
-  font-size: 14px;
 }
 
-.filter-group input,
-.filter-group select {
-  padding: 8px 12px;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  font-size: 14px;
-}
-
-.apply-btn {
+.pdf-btn {
   padding: 8px 16px;
-  background: #667eea;
+  background: #66bb6a;
   color: white;
   border: none;
   border-radius: 6px;
   cursor: pointer;
-  font-weight: 600;
-  align-self: flex-end;
-  transition: background 0.3s;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
 }
 
-.apply-btn:hover {
-  background: #5568d3;
+.pdf-btn:hover {
+  background: #558a5a;
+  transform: translateY(-1px);
 }
 
-.data-table {
+.history-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+  max-width: 100%;
+}
+
+.chart-wrapper {
   background: white;
   border-radius: 8px;
-  overflow: auto;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
-}
-
-thead {
-  background: #f5f5f5;
-  border-bottom: 2px solid #e0e0e0;
-}
-
-th {
   padding: 12px;
-  text-align: left;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chart-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.chart-title h3 {
+  margin: 0;
+  font-size: 14px;
   font-weight: 600;
   color: #333;
 }
 
-td {
-  padding: 12px;
-  border-bottom: 1px solid #e0e0e0;
-  color: #666;
+.period-buttons {
+  display: flex;
+  gap: 6px;
 }
 
-tr:hover {
-  background: #f9f9f9;
-}
-
-.status {
-  display: inline-block;
-  padding: 4px 12px;
-  border-radius: 20px;
-  font-weight: 600;
+.period-btn {
+  padding: 4px 10px;
+  background: #f0f0f0;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
   font-size: 12px;
+  color: #666;
+  transition: all 0.2s;
 }
 
-.status-normal {
-  background: #d4edda;
-  color: #155724;
+.period-btn:hover {
+  background: #e8e8e8;
 }
 
-.status-warning {
-  background: #fff3cd;
-  color: #856404;
+.period-btn.active {
+  background: #66bb6a;
+  color: white;
+  border-color: #66bb6a;
 }
 
-.status-critical {
-  background: #f8d7da;
-  color: #721c24;
+.chart-container {
+  position: relative;
+  height: 140px;
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.chart-container canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.measurements {
+  display: flex;
+  justify-content: space-around;
+  font-size: 12px;
+  color: #666;
+  padding-top: 8px;
+  border-top: 1px solid #e8ecf1;
+}
+
+.measurements span {
+  font-weight: 500;
 }
 </style>
