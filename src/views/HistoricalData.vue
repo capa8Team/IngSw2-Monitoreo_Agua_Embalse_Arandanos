@@ -111,6 +111,15 @@
 
         <div class="table-filters" aria-label="Filtro de fechas de la tabla">
           <label class="table-filter-field">
+            <span>Sensor</span>
+            <select v-model="tableDateFilter.sensor" class="table-filter-select">
+              <option value="all">Todos los sensores</option>
+              <option value="ph">pH</option>
+              <option value="temperature">Temperatura (°C)</option>
+              <option value="conductivity">Conductividad (µS/cm)</option>
+            </select>
+          </label>
+          <label class="table-filter-field">
             <span>Fecha</span>
             <select v-model="tableDateFilter.mode" class="table-filter-select">
               <option value="all">Todas las fechas</option>
@@ -132,7 +141,7 @@
               <input v-model="tableDateFilter.endDate" type="date" class="table-filter-input" />
             </label>
           </template>
-          <span v-if="tableDateFilter.mode !== 'all'" class="table-filter-count">
+          <span v-if="tableDateFilter.mode !== 'all' || tableDateFilter.sensor !== 'all'" class="table-filter-count">
             {{ measurementRowsFiltered.length }} registro(s)
           </span>
         </div>
@@ -351,6 +360,7 @@ const tableDateFilter = reactive({
   day: localDateKey(new Date()),
   startDate: localDateKey(new Date(Date.now() - 6 * 24 * 60 * 60 * 1000)),
   endDate: localDateKey(new Date()),
+  sensor: 'all',
 })
 
 const deviceOptions = computed(() => {
@@ -360,6 +370,12 @@ const deviceOptions = computed(() => {
 
 const measurementRowsFiltered = computed(() => {
   return measurementRows.value.filter((row) => {
+    // Filtro de sensor
+    if (tableDateFilter.sensor !== 'all' && row.sensorKey !== tableDateFilter.sensor) {
+      return false
+    }
+
+    // Filtro de fecha
     if (tableDateFilter.mode === 'all') return true
     if (tableDateFilter.mode === 'day') {
       return row.dateKey === tableDateFilter.day
@@ -857,7 +873,7 @@ watch(deviceOptions, (options) => {
 
 // Resetear la página cuando cambia el filtro de tabla
 watch(
-  () => [tableDateFilter.mode, tableDateFilter.day, tableDateFilter.startDate, tableDateFilter.endDate],
+  () => [tableDateFilter.mode, tableDateFilter.day, tableDateFilter.startDate, tableDateFilter.endDate, tableDateFilter.sensor],
   () => {
     currentTablePage.value = 1
   }

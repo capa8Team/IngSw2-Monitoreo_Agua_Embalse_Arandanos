@@ -186,7 +186,7 @@
     <header class="dashboard-header">
       <div class="header-content">
         <ThemeToggleButton />
-        <button class="back-btn" @click="goToDashboardView" title="Volver al dashboard">
+        <button class="back-btn" @click="goBack" title="Volver">
           <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
             <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
           </svg>
@@ -275,7 +275,7 @@
     <header class="dashboard-header">
       <div class="header-content">
         <ThemeToggleButton />
-        <button class="back-btn" @click="goToDashboardView" title="Volver al dashboard">
+        <button class="back-btn" @click="goToHome" title="Volver al inicio">
           <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
             <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
           </svg>
@@ -539,6 +539,7 @@ let editingLimits = ref({
 })
 
 const currentView = ref('devices')
+const previousView = ref(null)
 const selectedDeviceId = ref(null)
 const lastSync = ref('Sin datos del Arduino')
 const showAllTodayAlerts = ref(false)
@@ -902,6 +903,8 @@ const openHistory = () => {
 
 const openAlertConfigView = () => {
   if (!isAdmin.value) return
+  // Guardar desde donde vino el usuario
+  previousView.value = currentView.value
   // Copiar valores actuales a editingLimits para que los cambios no afecten los gráficos hasta guardar
   editingLimits.value = JSON.parse(JSON.stringify(SENSOR_LIMITS.value))
   console.log('[DEBUG] editingLimits cargado con valores guardados:', editingLimits.value)
@@ -918,13 +921,21 @@ const goToDashboardView = () => {
   currentView.value = 'dashboard'
 }
 
+const goToHome = () => {
+  currentView.value = 'devices'
+}
+
 const goBack = () => {
   // Descartar cambios sin guardar cuando se regresa de la vista de configuración
   if (currentView.value === 'admin-alerts') {
     editingLimits.value = JSON.parse(JSON.stringify(SENSOR_LIMITS.value))
     console.log('[DEBUG] Cambios descartados, editingLimits restaurado a valores guardados')
+    // Volver a la vista anterior (dashboard si viene del dispositivo)
+    currentView.value = previousView.value || 'devices'
+  } else {
+    // Para otros casos, volver al home
+    currentView.value = 'devices'
   }
-  currentView.value = 'devices'
 }
 
 const handleLogout = () => {
