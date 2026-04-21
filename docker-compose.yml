@@ -1,16 +1,77 @@
+# Monitoreo Embalse Arándanos — stack Docker
+#
+# Uso típico (Mongo + API + frontend con nginx y proxy /api):
+#   docker compose up --build
+#
+# Frontend: http://localhost:5173  (mapea al puerto 80 del contenedor nginx)
+# API directa (desde el host):      http://localhost:8000
+#
+# El build del frontend deja VITE_API_URL vacío por defecto: el navegador llama
+# a /api/... y nginx reenvía a backend:8000 (ver nginx.conf).
+# Para desarrollo local con "npm run dev", vite.config.js ya hace proxy de /api → :8000.
+#
+# Variables opcionales (crear .env en la raíz del repo):
+#   JWT_SECRET, MONGO_ROOT_PASSWORD, VITE_SUPABASE_*, VITE_DATA_MODE, etc.
+
 services:
+  mongodb:
+    image: mongo:7.0
+    container_name: mongodb-arandanos
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-Panconpalta1}
+      MONGO_INITDB_DATABASE: ${MONGODB_DB:-Arandanos}
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongodb_data:/data/db
+    # Si cambias MONGO_ROOT_PASSWORD, ajusta también -p aquí (o usa el mismo valor por defecto).
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mongosh",
+          "--quiet",
+          "-u",
+          "admin",
+          "-p",
+          "Panconpalta1",
+          "--authenticationDatabase",
+          "admin",
+          "--eval",
+          "db.adminCommand('ping').ok",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 6
+      start_period: 40s
+    networks:
+      - arandanos-network
+
   backend:
     build:
       context: ./backend_fastapi
       dockerfile: Dockerfile
     container_name: backend-fastapi
-    restart: always
+    restart: unless-stopped
     environment:
-      MONGODB_URL: mongodb://admin:Panconpalta1@mongodb:27017/?authSource=admin
-      MONGODB_DB: Arandanos
+      MONGODB_URL: mongodb://${MONGO_INITDB_ROOT_USERNAME:-admin}:${MONGO_ROOT_PASSWORD:-Panconpalta1}@mongodb:27017/?authSource=admin
+      MONGODB_DB: ${MONGODB_DB:-Arandanos}
       SIMULATED_DATA_ENABLED: "${SIMULATED_DATA_ENABLED:-true}"
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      JWT_SECRET: ${JWT_SECRET:-dev-cambiar-en-produccion-embalse-arandanos}
+      JWT_ACCESS_MINUTES_ADMIN: ${JWT_ACCESS_MINUTES_ADMIN:-30}
+      JWT_ACCESS_HOURS_EMPLOYEE: ${JWT_ACCESS_HOURS_EMPLOYEE:-8}
+      JWT_REFRESH_DAYS: ${JWT_REFRESH_DAYS:-7}
+      AUTH_DEMO_PASSWORD: ${AUTH_DEMO_PASSWORD:-123456789}
+      MAILERSEND_API_TOKEN: ${MAILERSEND_API_TOKEN:-}
+      MAILERSEND_FROM_EMAIL: ${MAILERSEND_FROM_EMAIL:-}
+      MAILERSEND_FROM_NAME: ${MAILERSEND_FROM_NAME:-Monitoreo Embalse Arandanos}
+      MAILERSEND_TO_EMAILS: ${MAILERSEND_TO_EMAILS:-}
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"
     depends_on:
       mongodb:
         condition: service_healthy
@@ -22,52 +83,36 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
       args:
+        # Vacío: URLs relativas /api → nginx → backend (recomendado en Docker).
         VITE_API_URL: "${VITE_API_URL:-}"
         VITE_DATA_MODE: "${VITE_DATA_MODE:-simulated}"
         VITE_SUPABASE_URL: "${VITE_SUPABASE_URL:-}"
         VITE_SUPABASE_ANON_KEY: "${VITE_SUPABASE_ANON_KEY:-}"
     container_name: frontend-arandanos
-    restart: always
+    restart: unless-stopped
     ports:
-      - "5173:80"
+      - "${FRONTEND_PORT:-5173}:80"
     depends_on:
       - backend
     networks:
       - arandanos-network
 
+  # PostgreSQL opcional (datos legados / scripts). No requerido para JWT + dashboard actual.
   database:
     image: postgres:17
-    container_name: postgres_contenedor
+    container_name: postgres-arandanos
+    profiles:
+      - postgres
+    restart: unless-stopped
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=tu_password_aqui  
-      - POSTGRES_DB=postgres
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
     ports:
-      - "5433:5432" 
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
-      - ./backup_proyecto.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./backup_proyecto.sql:/docker-entrypoint-initdb.d/init.sql:ro
       - postgres_data:/var/lib/postgresql/data
-    networks:
-      - arandanos-network
-
-  # MongoDB para datos de sensores
-  mongodb:
-    image: mongo:7.0
-    container_name: mongodb-arandanos
-    restart: always
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: Panconpalta1
-      MONGO_INITDB_DATABASE: Arandanos
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongodb_data:/data/db
-    healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
-      interval: 10s
-      timeout: 5s
-      retries: 5
     networks:
       - arandanos-network
 

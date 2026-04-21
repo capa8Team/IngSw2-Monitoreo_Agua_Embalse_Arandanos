@@ -4,7 +4,17 @@
  * Inactividad 30 min: solo aplica cierre de sesión al rol administrador.
  */
 
-const API_URL = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')
+/**
+ * Vacío = rutas relativas (/api/...), p. ej. detrás de nginx en Docker.
+ * Si defines VITE_API_URL, debe ser alcanzable desde el navegador (p. ej. http://localhost:8000).
+ */
+function resolvePublicApiBase() {
+  const raw = import.meta.env.VITE_API_URL
+  if (raw === undefined || raw === null || String(raw).trim() === '') return ''
+  return String(raw).replace(/\/$/, '')
+}
+
+const API_URL = resolvePublicApiBase()
 
 export const IDLE_TIMEOUT_MS = 30 * 60 * 1000
 const ACTIVITY_THROTTLE_MS = 400

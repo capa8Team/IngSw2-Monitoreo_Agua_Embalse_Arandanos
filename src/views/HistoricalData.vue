@@ -541,8 +541,15 @@ function downsampleRows(rows, maxPoints) {
   return sampled.slice(-maxPoints)
 }
 
+/** Misma lógica que nginx/Docker: vacío → /api/... relativo al origen. */
+function resolveApiBase() {
+  const raw = import.meta.env.VITE_API_URL
+  if (raw === undefined || raw === null || String(raw).trim() === '') return ''
+  return String(raw).replace(/\/$/, '')
+}
+
 async function fetchRealtimeMeasurements() {
-  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+  const apiUrl = resolveApiBase()
 
   try {
     let records = []
@@ -582,7 +589,7 @@ async function fetchRealtimeMeasurements() {
 
 const generateMockData = async (type, period) => {
   try {
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+    const apiUrl = resolveApiBase()
     console.log(`[DEBUG] Fetching from ${apiUrl}/api/dashboard for type: ${type}`)
     const response = await fetch(`${apiUrl}/api/dashboard`)
     const data = await response.json()
