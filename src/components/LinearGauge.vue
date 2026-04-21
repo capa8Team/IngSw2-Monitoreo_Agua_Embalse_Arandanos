@@ -121,7 +121,7 @@
       <text
         :x="width / 2"
         :y="height - 15"
-        fill="#000"
+        :fill="valueDisplayFill"
         font-size="18"
         font-weight="bold"
         text-anchor="middle"
@@ -133,7 +133,23 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
+
+const valueDisplayFill = ref('#111827')
+
+function syncValueFill() {
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark'
+  valueDisplayFill.value = dark ? '#f1f5f9' : '#111827'
+}
+
+onMounted(() => {
+  syncValueFill()
+  window.addEventListener('embalse-theme-change', syncValueFill)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('embalse-theme-change', syncValueFill)
+})
 
 const props = defineProps({
   sensorName: {

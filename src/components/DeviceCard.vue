@@ -299,4 +299,67 @@ const normalizedSensors = computed(() => {
     font-size: 11px;
   }
 }
+
+/* Modo oscuro: reglas scoped para vencer estilos locales del componente */
+html[data-theme='dark'] .device-card {
+  background: #262a36;
+  border-color: #3d4254;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+}
+
+html[data-theme='dark'] .device-card:hover {
+  border-color: #4ade80;
+  box-shadow: 0 4px 16px rgba(74, 222, 128, 0.2), 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+html[data-theme='dark'] .device-card.is-selected {
+  background: #1a2e24;
+  border-color: #4ade80;
+  box-shadow: 0 4px 20px rgba(74, 222, 128, 0.25), 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+html[data-theme='dark'] .device-icon {
+  background: #2e3240;
+  color: #86efac;
+}
+
+html[data-theme='dark'] .device-name {
+  color: #f1f5f9;
+}
+
+html[data-theme='dark'] .device-model {
+  color: #94a3b8;
+}
+
+html[data-theme='dark'] .status-connected {
+  background: #14532d;
+  color: #bbf7d0;
+}
+
+html[data-theme='dark'] .status-disconnected {
+  background: #450a0a;
+  color: #fecaca;
+}
+
+html[data-theme='dark'] .device-body {
+  border-top-color: #3d4254;
+  border-bottom-color: #3d4254;
+}
+
+html[data-theme='dark'] .sensor-item {
+  background: #1a1d26;
+}
+
+html[data-theme='dark'] .sensor-name {
+  color: #94a3b8;
+}
+
+html[data-theme='dark'] .sensor-value {
+  color: #e2e8f0;
+}
+
+html[data-theme='dark'] .device-footer,
+html[data-theme='dark'] .last-update {
+  color: #94a3b8;
+}
 </style>

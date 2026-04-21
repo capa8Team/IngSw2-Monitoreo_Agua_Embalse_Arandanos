@@ -1,6 +1,7 @@
 <template>
   <div class="devices-view">
     <header class="devices-header">
+      <ThemeToggleButton />
       <div class="header-content">
         <h1 class="header-title">Dispositivos Conectados</h1>
         <p class="header-subtitle">Selecciona un Arduino para ver las mediciones en tiempo real</p>
@@ -30,11 +31,28 @@
         </button>
 
         <button
+          v-if="isAdmin"
+          class="admin-btn"
+          @click="$emit('open-user-management')"
+          title="Gestión de usuarios"
+        >
+          Gestion de usuarios
+        </button>
+
+        <button
           class="history-btn"
           @click="$emit('open-history')"
           title="Abrir registro histórico"
         >
           Registro Histórico
+        </button>
+
+        <button
+          class="logout-btn"
+          @click="$emit('logout')"
+          title="Cerrar sesión"
+        >
+          Cerrar Sesión
         </button>
       </div>
     </header>
@@ -65,6 +83,7 @@
 <script setup>
 import { ref } from 'vue'
 import DeviceCard from './DeviceCard.vue'
+import ThemeToggleButton from './ThemeToggleButton.vue'
 
 const viewMode = ref('grid')
 const selectedDeviceId = ref(null)
@@ -72,6 +91,10 @@ const props = defineProps({
   devicesData: {
     type: Array,
     required: true
+  },
+  isAdmin: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -81,7 +104,7 @@ const selectDevice = (device) => {
   emit('select-device', device)
 }
 
-const emit = defineEmits(['select-device', 'open-history'])
+const emit = defineEmits(['select-device', 'open-history', 'open-user-management', 'logout'])
 </script>
 
 <style scoped>
@@ -99,8 +122,9 @@ const emit = defineEmits(['select-device', 'open-history'])
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 32px;
+  gap: 20px 32px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+  flex-wrap: wrap;
 }
 
 .header-content h1 {
@@ -142,6 +166,38 @@ const emit = defineEmits(['select-device', 'open-history'])
 
 .history-btn:hover {
   background: #e8f5e9;
+}
+
+.logout-btn {
+  border: 1px solid #ef9a9a;
+  background: #ffffff;
+  color: #c62828;
+  border-radius: 6px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.logout-btn:hover {
+  background: #ffebee;
+}
+
+.admin-btn {
+  border: 1px solid #ffa500;
+  background: #ffffff;
+  color: #ff8c00;
+  border-radius: 6px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.admin-btn:hover {
+  background: #fff5e6;
 }
 
 .view-btn {
@@ -256,6 +312,10 @@ const emit = defineEmits(['select-device', 'open-history'])
     height: 36px;
   }
 
+  .logout-btn {
+    height: 36px;
+  }
+
   .devices-container {
     padding: 16px;
   }
@@ -311,5 +371,98 @@ const emit = defineEmits(['select-device', 'open-history'])
   .empty-state {
     padding: 40px 16px;
   }
+}
+
+/*
+ * Modo oscuro: debe vivir en este SFC con scoped para que el compilador
+ * añada [data-v-*] y supere la especificidad de los estilos claros locales.
+ */
+html[data-theme='dark'] .devices-view {
+  background: linear-gradient(135deg, #1a1d26 0%, #121520 100%);
+  background-color: #121520;
+  flex: 1 0 auto;
+  width: 100%;
+  min-height: 100%;
+  min-height: 100dvh;
+}
+
+html[data-theme='dark'] .devices-header {
+  background: #22252e;
+  border-bottom: 1px solid #343845;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+html[data-theme='dark'] .header-title,
+html[data-theme='dark'] .header-content h1 {
+  color: #f1f5f9;
+}
+
+html[data-theme='dark'] .header-subtitle {
+  color: #94a3b8;
+}
+
+html[data-theme='dark'] .view-controls {
+  background: #2a2d38;
+  border: 1px solid #343845;
+}
+
+html[data-theme='dark'] .view-btn {
+  color: #94a3b8;
+  border-color: transparent;
+}
+
+html[data-theme='dark'] .view-btn:hover {
+  color: #e2e8f0;
+  background: #343845;
+}
+
+html[data-theme='dark'] .view-btn.active {
+  background: #1e3a2a;
+  color: #86efac;
+  border-color: #66bb6a;
+}
+
+html[data-theme='dark'] .admin-btn {
+  background: #262a36;
+  border-color: #fb923c;
+  color: #fed7aa;
+}
+
+html[data-theme='dark'] .admin-btn:hover {
+  background: #431407;
+  color: #ffedd5;
+}
+
+html[data-theme='dark'] .history-btn {
+  background: #262a36;
+  border-color: #4ade80;
+  color: #bbf7d0;
+}
+
+html[data-theme='dark'] .history-btn:hover {
+  background: #1e3a2a;
+}
+
+html[data-theme='dark'] .logout-btn {
+  background: #262a36;
+  border-color: #f87171;
+  color: #fecaca;
+}
+
+html[data-theme='dark'] .logout-btn:hover {
+  background: #3f1d1d;
+}
+
+html[data-theme='dark'] .empty-state {
+  color: #94a3b8;
+}
+
+html[data-theme='dark'] .empty-icon {
+  background: #2e3240;
+  color: #64748b;
+}
+
+html[data-theme='dark'] .empty-text {
+  color: #cbd5e1;
 }
 </style>

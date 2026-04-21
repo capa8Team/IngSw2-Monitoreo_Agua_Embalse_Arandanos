@@ -19,6 +19,7 @@
         :major-ticks="majorTicks"
         :minor-ticks="5"
         :highlights="gaugeHighlights"
+        v-bind="linearGaugeThemeProps"
       />
     </div>
 
@@ -43,7 +44,35 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
+
+const gaugeIsDark = ref(false)
+
+function syncGaugeTheme() {
+  gaugeIsDark.value = document.documentElement.getAttribute('data-theme') === 'dark'
+}
+
+onMounted(() => {
+  syncGaugeTheme()
+  window.addEventListener('embalse-theme-change', syncGaugeTheme)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('embalse-theme-change', syncGaugeTheme)
+})
+
+const linearGaugeThemeProps = computed(() => {
+  if (!gaugeIsDark.value) return {}
+  return {
+    colorMajorTicks: '#94a3b8',
+    colorMinorTicks: '#64748b',
+    colorNumbers: '#e2e8f0',
+    colorUnits: '#cbd5e1',
+    colorPlate: '#1e293b',
+    colorPlateEnd: '#0f172a',
+    colorNeedle: '#fcd34d',
+  }
+})
 import LinearGauge from './LinearGauge.vue'
 
 const props = defineProps({

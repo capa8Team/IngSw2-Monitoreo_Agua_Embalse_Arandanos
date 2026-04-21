@@ -26,6 +26,8 @@ dist-ssr
 # Python cache artifacts
 __pycache__/
 *.py[cod]
+venv/
+.venv/
 
 # Secrets and local environment
 .env
