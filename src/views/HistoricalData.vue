@@ -103,7 +103,7 @@
         </div>
       </div>
 
-      <section class="table-wrapper" :class="{ expanded: isTableExpanded }">
+      <section class="table-wrapper">
         <div class="table-header">
           <h3>Mediciones En Tiempo Real</h3>
           <span class="table-meta">Actualiza cada 30 segundos</span>
@@ -173,10 +173,40 @@
           </table>
         </div>
 
-        <div class="table-actions" v-if="hasMoreRows">
-          <button class="show-more-btn" @click="toggleTableExpanded">
-            {{ isTableExpanded ? 'Mostrar menos' : 'Mostrar más' }}
-          </button>
+        <div class="table-actions" v-if="totalTablePages > 1">
+          <div class="pagination-controls">
+            <button 
+              class="pagination-btn" 
+              :disabled="currentTablePage === 1"
+              @click="prevTablePage"
+            >
+              ← Anterior
+            </button>
+            
+            <div class="pagination-numbers">
+              <button 
+                v-for="page in totalTablePages" 
+                :key="page"
+                class="page-number-btn"
+                :class="{ active: currentTablePage === page }"
+                @click="goToTablePage(page)"
+              >
+                {{ page }}
+              </button>
+            </div>
+            
+            <button 
+              class="pagination-btn" 
+              :disabled="currentTablePage === totalTablePages"
+              @click="nextTablePage"
+            >
+              Siguiente →
+            </button>
+          </div>
+          <span class="pagination-info">
+            Página {{ currentTablePage }} de {{ totalTablePages }} 
+            ({{ measurementRowsFiltered.length }} registros totales)
+          </span>
         </div>
       </section>
     </main>
@@ -300,7 +330,8 @@ const chartStats = reactive({
 
 const normalizedReadings = ref([])
 const measurementRows = ref([])
-const isTableExpanded = ref(false)
+const currentTablePage = ref(1)
+const itemsPerPage = 10
 const showPdfModal = ref(false)
 const isGeneratingPdf = ref(false)
 
@@ -340,11 +371,14 @@ const measurementRowsFiltered = computed(() => {
 })
 
 const visibleMeasurementRows = computed(() => {
-  const limit = isTableExpanded.value ? 60 : 10
-  return measurementRowsFiltered.value.slice(0, limit)
+  const start = (currentTablePage.value - 1) * itemsPerPage
+  const end = start + itemsPerPage
+  return measurementRowsFiltered.value.slice(start, end)
 })
 
-const hasMoreRows = computed(() => measurementRowsFiltered.value.length > 10)
+const totalTablePages = computed(() => {
+  return Math.ceil(measurementRowsFiltered.value.length / itemsPerPage) || 1
+})
 
 const filteredRowsForPdf = computed(() => {
   return measurementRows.value.filter((row) => {
@@ -821,6 +855,14 @@ watch(deviceOptions, (options) => {
   }
 })
 
+// Resetear la página cuando cambia el filtro de tabla
+watch(
+  () => [tableDateFilter.mode, tableDateFilter.day, tableDateFilter.startDate, tableDateFilter.endDate],
+  () => {
+    currentTablePage.value = 1
+  }
+)
+
 onMounted(async () => {
   await nextTick()
   window.addEventListener('embalse-theme-change', onChartsThemeChange)
@@ -856,8 +898,21 @@ const goBack = () => {
   router.back()
 }
 
-const toggleTableExpanded = () => {
-  isTableExpanded.value = !isTableExpanded.value
+const goToTablePage = (page) => {
+  const newPage = Math.max(1, Math.min(page, totalTablePages.value))
+  currentTablePage.value = newPage
+}
+
+const nextTablePage = () => {
+  if (currentTablePage.value < totalTablePages.value) {
+    currentTablePage.value += 1
+  }
+}
+
+const prevTablePage = () => {
+  if (currentTablePage.value > 1) {
+    currentTablePage.value -= 1
+  }
 }
 
 const openPdfModal = () => {
@@ -1361,10 +1416,12 @@ const downloadPDF = async () => {
   overflow-x: hidden;
   padding: 16px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  grid-template-columns: repeat(3, minmax(300px, 1fr));
   gap: 12px;
   align-items: start;
+  justify-items: center;
   max-width: 100%;
+  margin: 0 auto;
 }
 
 .chart-wrapper {
@@ -1376,6 +1433,7 @@ const downloadPDF = async () => {
   flex-direction: column;
   gap: 6px;
   height: fit-content;
+  width: 100%;
 }
 
 .chart-title {
@@ -1590,22 +1648,86 @@ const downloadPDF = async () => {
 
 .table-actions {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  padding-top: 12px;
 }
 
-.show-more-btn {
-  padding: 7px 12px;
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.pagination-btn {
+  padding: 8px 12px;
   border-radius: 6px;
   border: 1px solid #66bb6a;
   background: #66bb6a;
   color: white;
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: all 0.2s;
+  white-space: nowrap;
 }
 
-.show-more-btn:hover {
+.pagination-btn:hover:not(:disabled) {
   background: #558a5a;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.pagination-btn:disabled {
+  background: #ccc;
+  color: #888;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.pagination-numbers {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.page-number-btn {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  background: #f5f5f5;
+  color: #333;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.page-number-btn:hover {
+  background: #e8e8e8;
+  border-color: #66bb6a;
+}
+
+.page-number-btn.active {
+  background: #66bb6a;
+  color: white;
+  border-color: #66bb6a;
+  box-shadow: 0 2px 4px rgba(102, 187, 106, 0.3);
+}
+
+.pagination-info {
+  font-size: 12px;
+  color: #666;
+  text-align: center;
+  width: 100%;
 }
 
 .pdf-modal-overlay {
