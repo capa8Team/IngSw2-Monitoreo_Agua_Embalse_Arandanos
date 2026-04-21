@@ -76,38 +76,42 @@ configure_logging()
 # ============================================================================
 
 MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
-MONGODB_DB = os.getenv("MONGODB_DB", "embalse_arandanos")
+MONGODB_DB = os.getenv("MONGODB_DB", "Arandanos")
+
+_is_atlas = MONGODB_URL.startswith("mongodb+srv://")
 
 try:
-    # Intentar con SSL verificado primero
     mongo_client = MongoClient(
-        MONGODB_URL, 
+        MONGODB_URL,
         serverSelectionTimeoutMS=5000,
         connectTimeoutMS=5000,
         socketTimeoutMS=5000,
     )
-    # Verificar conexión
     mongo_client.admin.command('ping')
     db = mongo_client[MONGODB_DB]
-    logger.info("Conexion a MongoDB establecida")
+    logger.info("Conexión a MongoDB establecida (%s)", "Atlas" if _is_atlas else "local")
 except Exception as e:
-    logger.warning(f"No se pudo conectar a MongoDB con SSL verificado: {e}")
-    try:
-        # Intentar sin verificación SSL como fallback
-        import ssl
-        mongo_client = MongoClient(
-            MONGODB_URL,
-            serverSelectionTimeoutMS=5000,
-            connectTimeoutMS=5000,
-            socketTimeoutMS=5000,
-            tlsAllowInvalidCertificates=True,
-            tlsAllowInvalidHostnames=True,
-        )
-        mongo_client.admin.command('ping')
-        db = mongo_client[MONGODB_DB]
-        logger.info("Conexión a MongoDB establecida (con SSL deshabilitado)")
-    except Exception as e2:
-        logger.warning(f"No se pudo conectar a MongoDB. Usando almacenamiento en memoria. Error: {e2}")
+    logger.warning("No se pudo conectar a MongoDB: %s", e)
+    if not _is_atlas:
+        # Fallback sin TLS solo para instancias locales
+        try:
+            mongo_client = MongoClient(
+                MONGODB_URL,
+                serverSelectionTimeoutMS=5000,
+                connectTimeoutMS=5000,
+                socketTimeoutMS=5000,
+                tlsAllowInvalidCertificates=True,
+                tlsAllowInvalidHostnames=True,
+            )
+            mongo_client.admin.command('ping')
+            db = mongo_client[MONGODB_DB]
+            logger.info("Conexión a MongoDB local establecida (TLS deshabilitado)")
+        except Exception as e2:
+            logger.warning("No se pudo conectar a MongoDB local. Usando memoria. Error: %s", e2)
+            mongo_client = None
+            db = None
+    else:
+        logger.warning("Usando almacenamiento en memoria. Verifica la URI y las reglas de acceso en MongoDB Atlas.")
         mongo_client = None
         db = None
 

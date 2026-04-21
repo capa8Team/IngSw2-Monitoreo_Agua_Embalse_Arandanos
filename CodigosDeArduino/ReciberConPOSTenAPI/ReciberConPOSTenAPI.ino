@@ -15,22 +15,23 @@
 #include <Arduino_JSON.h>
 
 // Credenciales STA para acceso a internet/API
-const char* ssid = "movistar2,4GHZ_0FDAC0";
-const char* password = "jen82E99M6zcm2m8262v";
+const char* ssid = "Doria phone";
+const char* password = "Panconpalta1";
 
 // Red AP local para abrir el dashboard aun sin internet
 const char* apSsid = "ESP8266-pH";
 const char* apPassword = "12345678";
 
-// URL de tu API REST para registrar lecturas
-// Importante: usa la IP LAN del PC donde corre FastAPI (no localhost).
-const char* serverName = "https://api.tu-dominio.com/api/sensors/ph";
+// URL de tu API REST para registrar lecturas.
+// Para Railway/Vercel usa HTTPS con dominio publico.
+const char* serverName = "https://deployarandanosv2-production.up.railway.app/api/sensors/ph";
 
 // Debe coincidir con el struct del sender
 typedef struct struct_message {
   char Nombre[32];
   int id_env;
   float pH;
+  float Temp;
 } struct_message;
 
 struct_message incomingReadings;
@@ -112,6 +113,7 @@ const char index_html[] PROGMEM = R"rawliteral(
       <div class="row"><span class="label">Dispositivo</span><span class="value" id="device">-</span></div>
       <div class="row"><span class="label">ID envio</span><span class="value" id="idEnv">-</span></div>
       <div class="row"><span class="label">pH</span><span class="value ph" id="ph">--.--</span></div>
+      <div class="row"><span class="label">Temperatura (C)</span><span class="value" id="temp">--.--</span></div>
       <div class="row"><span class="label">Ultimo evento</span><span class="value" id="time">-</span></div>
       <div class="row"><span class="label">POST API</span><span class="value" id="postStatus">-</span></div>
     </div>
@@ -127,6 +129,7 @@ const char index_html[] PROGMEM = R"rawliteral(
       document.getElementById('device').textContent = data.device || '-';
       document.getElementById('idEnv').textContent = data.id_env ?? '-';
       document.getElementById('ph').textContent = Number(data.ph || 0).toFixed(2);
+      document.getElementById('temp').textContent = Number(data.temp ?? data.Temp ?? 0).toFixed(2);
       document.getElementById('time').textContent = data.timestamp || now();
       document.getElementById('postStatus').textContent = data.post_status || '-';
     }
@@ -201,6 +204,8 @@ String buildBoardJson() {
   board["device"] = incomingReadings.Nombre;
   board["id_env"] = incomingReadings.id_env;
   board["ph"] = incomingReadings.pH;
+  board["temp"] = incomingReadings.Temp;
+  board["Temp"] = incomingReadings.Temp;
   board["timestamp"] = String(millis());
   board["post_status"] = lastPostStatus;
   return JSON.stringify(board);
@@ -215,25 +220,22 @@ void postToApi() {
   }
 
   HTTPClient http;
-
-  String endpoint = String(serverName);
-  bool isHttps = endpoint.startsWith("https://");
-  bool beginOk = false;
-
-  // Los clientes deben vivir hasta despues de http.POST(...), por eso se declaran en este alcance.
   WiFiClient client;
   WiFiClientSecure clientSecure;
 
-  if (isHttps) {
+  String apiUrl = String(serverName);
+  if (apiUrl.startsWith("https://")) {
+    // Railway usa TLS valido. Si hay problemas de CA en ESP8266, setInsecure evita bloqueo.
     clientSecure.setInsecure();
-    beginOk = http.begin(clientSecure, endpoint);
+    if (!http.begin(clientSecure, apiUrl)) {
+      lastPostStatus = "http.begin HTTPS fallo";
+      return;
+    }
   } else {
-    beginOk = http.begin(client, endpoint);
-  }
-
-  if (!beginOk) {
-    lastPostStatus = "http.begin fallo";
-    return;
+    if (!http.begin(client, apiUrl)) {
+      lastPostStatus = "http.begin HTTP fallo";
+      return;
+    }
   }
 
   http.addHeader("Content-Type", "application/json");
@@ -243,6 +245,9 @@ void postToApi() {
   payload["id_env"] = incomingReadings.id_env;
   payload["ph"] = incomingReadings.pH;
   payload["timestamp"] = millis() / 1000;
+  payload["temperature"] = incomingReadings.Temp;
+  payload["conductivity"] = 0;
+  payload["bateria"] = 100;
 
   String requestBody;
   serializeJson(payload, requestBody);
@@ -340,7 +345,7 @@ void setup() {
   incomingReadings.Nombre[sizeof(incomingReadings.Nombre) - 1] = '\0';
   incomingReadings.id_env = -1;
   incomingReadings.pH = 0.0;
-
+  incomingReadings.Temp = 0.0;
   setupWiFi();
   setupEspNow();
   setupWebServer();
@@ -363,6 +368,8 @@ void loop() {
     Serial.println(incomingReadings.id_env);
     Serial.print("Valor pH: ");
     Serial.println(incomingReadings.pH);
+    Serial.print("Valor temperatura en Celsius: ");
+    Serial.println(incomingReadings.Temp);
 
     postToApi();
 

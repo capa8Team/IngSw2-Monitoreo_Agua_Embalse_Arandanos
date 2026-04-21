@@ -1,7 +1,8 @@
 # Monitoreo Embalse Arándanos — stack Docker
 #
-# Uso típico (Mongo + API + frontend con nginx y proxy /api):
-#   docker compose up --build
+# Uso típico (Atlas + API + frontend con nginx y proxy /api):
+#   1. Copia .env.example a .env y completa MONGODB_URL con tu URI de MongoDB Atlas.
+#   2. docker compose up --build
 #
 # Frontend: http://localhost:5173  (mapea al puerto 80 del contenedor nginx)
 # API directa (desde el host):      http://localhost:8000
@@ -10,45 +11,12 @@
 # a /api/... y nginx reenvía a backend:8000 (ver nginx.conf).
 # Para desarrollo local con "npm run dev", vite.config.js ya hace proxy de /api → :8000.
 #
-# Variables opcionales (crear .env en la raíz del repo):
-#   JWT_SECRET, MONGO_ROOT_PASSWORD, VITE_SUPABASE_*, VITE_DATA_MODE, etc.
+# Variables requeridas en .env (raíz del repo):
+#   MONGODB_URL   → URI de MongoDB Atlas  (mongodb+srv://user:pass@cluster.mongodb.net/...)
+#   MONGODB_DB    → Nombre de la base de datos (ej. Arandanos)
+#   JWT_SECRET    → Secreto largo y aleatorio para tokens JWT
 
 services:
-  mongodb:
-    image: mongo:7.0
-    container_name: mongodb-arandanos
-    restart: unless-stopped
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-admin}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-Panconpalta1}
-      MONGO_INITDB_DATABASE: ${MONGODB_DB:-Arandanos}
-    ports:
-      - "${MONGO_PORT:-27017}:27017"
-    volumes:
-      - mongodb_data:/data/db
-    # Si cambias MONGO_ROOT_PASSWORD, ajusta también -p aquí (o usa el mismo valor por defecto).
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "mongosh",
-          "--quiet",
-          "-u",
-          "admin",
-          "-p",
-          "Panconpalta1",
-          "--authenticationDatabase",
-          "admin",
-          "--eval",
-          "db.adminCommand('ping').ok",
-        ]
-      interval: 10s
-      timeout: 10s
-      retries: 6
-      start_period: 40s
-    networks:
-      - arandanos-network
-
   backend:
     build:
       context: ./backend_fastapi
@@ -56,9 +24,9 @@ services:
     container_name: backend-fastapi
     restart: unless-stopped
     environment:
-      MONGODB_URL: mongodb://${MONGO_INITDB_ROOT_USERNAME:-admin}:${MONGO_ROOT_PASSWORD:-Panconpalta1}@mongodb:27017/?authSource=admin
+      MONGODB_URL: ${MONGODB_URL}
       MONGODB_DB: ${MONGODB_DB:-Arandanos}
-      SIMULATED_DATA_ENABLED: "${SIMULATED_DATA_ENABLED:-true}"
+      SIMULATED_DATA_ENABLED: "${SIMULATED_DATA_ENABLED:-false}"
       API_HOST: 0.0.0.0
       API_PORT: 8000
       JWT_SECRET: ${JWT_SECRET:-dev-cambiar-en-produccion-embalse-arandanos}
@@ -72,9 +40,6 @@ services:
       MAILERSEND_TO_EMAILS: ${MAILERSEND_TO_EMAILS:-}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
-    depends_on:
-      mongodb:
-        condition: service_healthy
     networks:
       - arandanos-network
 
@@ -118,7 +83,6 @@ services:
 
 volumes:
   postgres_data:
-  mongodb_data:
 
 networks:
   arandanos-network:

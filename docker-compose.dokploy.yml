@@ -1,4 +1,26 @@
-version: '3.8'
+# ============================================================================
+# docker-compose.dokploy.yml — Deploy en Dokploy / Ubuntu 24.04
+# ============================================================================
+#
+# Stack: FastAPI (backend) + nginx (frontend SPA)
+# Base de datos: MongoDB Atlas (remoto) — sin contenedor MongoDB local
+# Auth:          Supabase
+#
+# Cómo usar en Dokploy:
+#   1. Crear una nueva aplicación tipo "Docker Compose" en Dokploy.
+#   2. Apuntar al repositorio y seleccionar este archivo como compose file.
+#   3. En la sección "Environment Variables" de Dokploy, copiar y completar
+#      las variables de .env.dokploy.example
+#   4. En Dokploy configurar el dominio y habilitar SSL (Let's Encrypt).
+#   5. Hacer deploy.
+#
+# Notas:
+#   - Los servicios usan "expose" (no "ports"): Dokploy/Traefik gestiona
+#     el acceso externo y SSL.
+#   - VITE_API_URL debe quedar vacío: el frontend llama a /api/... y nginx
+#     reenvía al backend dentro de la misma red Docker.
+#   - VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY se inyectan en build time.
+# ============================================================================
 
 services:
   backend:
@@ -7,19 +29,21 @@ services:
       dockerfile: Dockerfile
     restart: always
     environment:
-      MONGODB_URL: mongodb://admin:${MONGO_ROOT_PASSWORD:-change_me_strong_password}@mongodb:27017/?authSource=admin
+      MONGODB_URL: ${MONGODB_URL}
       MONGODB_DB: ${MONGODB_DB:-Arandanos}
       SIMULATED_DATA_ENABLED: ${SIMULATED_DATA_ENABLED:-false}
+      API_PORT: 8000
+      API_HOST: 0.0.0.0
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_MINUTES_ADMIN: ${JWT_ACCESS_MINUTES_ADMIN:-30}
+      JWT_ACCESS_HOURS_EMPLOYEE: ${JWT_ACCESS_HOURS_EMPLOYEE:-8}
+      JWT_REFRESH_DAYS: ${JWT_REFRESH_DAYS:-7}
+      AUTH_DEMO_PASSWORD: ${AUTH_DEMO_PASSWORD:-}
       MAILERSEND_API_TOKEN: ${MAILERSEND_API_TOKEN:-}
       MAILERSEND_FROM_EMAIL: ${MAILERSEND_FROM_EMAIL:-}
       MAILERSEND_FROM_NAME: ${MAILERSEND_FROM_NAME:-Monitoreo Embalse Arandanos}
       MAILERSEND_TO_EMAILS: ${MAILERSEND_TO_EMAILS:-}
       MAILERSEND_TEMPLATE_ID: ${MAILERSEND_TEMPLATE_ID:-}
-      API_PORT: 8000
-      API_HOST: 0.0.0.0
-    depends_on:
-      mongodb:
-        condition: service_healthy
     expose:
       - "8000"
     networks:
@@ -30,8 +54,11 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
       args:
+        # Dejar vacío: el frontend usa /api/... y nginx reenvía al backend
         VITE_API_URL: ${VITE_API_URL:-}
         VITE_DATA_MODE: ${VITE_DATA_MODE:-real}
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
     restart: always
     depends_on:
       - backend
@@ -39,49 +66,6 @@ services:
       - "80"
     networks:
       - arandanos-network
-
-  database:
-    image: postgres:17
-    restart: always
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_strong_password}
-      POSTGRES_DB: ${POSTGRES_DB:-postgres}
-    volumes:
-      - ./backup_proyecto.sql:/docker-entrypoint-initdb.d/init.sql:ro
-      - postgres_data:/var/lib/postgresql/data
-    expose:
-      - "5432"
-    networks:
-      - arandanos-network
-
-  mongodb:
-    image: mongo:4.4
-    restart: always
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-change_me_strong_password}
-      MONGO_INITDB_DATABASE: ${MONGODB_DB:-Arandanos}
-    volumes:
-      - mongodb_data:/data/db
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "mongo --quiet --host localhost --port 27017 -u admin -p \"$$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --eval \"db.adminCommand('ping').ok\" | grep 1",
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    expose:
-      - "27017"
-    networks:
-      - arandanos-network
-
-volumes:
-  postgres_data:
-  mongodb_data:
 
 networks:
   arandanos-network:
