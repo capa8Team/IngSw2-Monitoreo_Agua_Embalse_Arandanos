@@ -6,7 +6,7 @@
         <button class="back-btn" @click="goBack">←</button>
         <h1>Datos Históricos</h1>
       </div>
-      <button class="pdf-btn" @click="openPdfModal">Descargar PDF</button>
+      <button v-if="isUserAdmin" class="pdf-btn" @click="openPdfModal">Descargar PDF</button>
     </div>
 
     <main class="history-content">
@@ -184,18 +184,43 @@
 
         <div class="table-actions" v-if="totalTablePages > 1">
           <div class="pagination-controls">
+            <!-- Botón Anterior -->
             <button 
-              class="pagination-btn" 
+              class="pagination-btn arrow-btn" 
               :disabled="currentTablePage === 1"
               @click="prevTablePage"
+              title="Página anterior"
             >
-              ← Anterior
+              &lt;
             </button>
             
+            <!-- Primeras 3 páginas -->
             <div class="pagination-numbers">
               <button 
-                v-for="page in totalTablePages" 
-                :key="page"
+                v-for="page in visiblePaginationPages"
+                :key="`page-${page}`"
+                class="page-number-btn"
+                :class="{ active: currentTablePage === page }"
+                @click="goToTablePage(page)"
+              >
+                {{ page }}
+              </button>
+              
+              <!-- Botón "..." si hay más páginas -->
+              <button 
+                v-if="shouldShowEllipsis"
+                class="page-ellipsis-btn"
+                @click="toggleExpandedPagination"
+                title="Mostrar más páginas"
+              >
+                ...
+              </button>
+              
+              <!-- Páginas expandidas (5 siguientes) -->
+              <button 
+                v-for="page in expandedPaginationPages"
+                v-show="showExpandedPages"
+                :key="`page-exp-${page}`"
                 class="page-number-btn"
                 :class="{ active: currentTablePage === page }"
                 @click="goToTablePage(page)"
@@ -204,16 +229,46 @@
               </button>
             </div>
             
+            <!-- Botón Siguiente -->
             <button 
-              class="pagination-btn" 
+              class="pagination-btn arrow-btn" 
               :disabled="currentTablePage === totalTablePages"
               @click="nextTablePage"
+              title="Página siguiente"
             >
-              Siguiente →
+              &gt;
             </button>
           </div>
-          <span class="pagination-info">
-            Página {{ currentTablePage }} de {{ totalTablePages }} 
+          
+          <!-- Información y entrada de página -->
+          <div class="pagination-footer">
+            <span class="pagination-info">
+              Página {{ currentTablePage }} de {{ totalTablePages }}
+            </span>
+            
+            <div class="go-to-page">
+              <label for="pageInput">Ir a página:</label>
+              <input 
+                id="pageInput"
+                v-model.number="jumpToPageValue"
+                type="number" 
+                :min="1" 
+                :max="totalTablePages"
+                @keyup.enter="jumpToPage"
+                placeholder="Ej: 5"
+                class="page-input"
+              />
+              <button 
+                class="pagination-btn jump-btn"
+                @click="jumpToPage"
+                :disabled="!isValidPageJump"
+              >
+                Ir
+              </button>
+            </div>
+          </div>
+          
+          <span class="pagination-records">
             ({{ measurementRowsFiltered.length }} registros totales)
           </span>
         </div>
@@ -307,9 +362,13 @@ import { computed, ref, reactive, watch, onMounted, onBeforeUnmount, nextTick } 
 import { useRouter } from 'vue-router'
 import Chart from 'chart.js/auto'
 import { jsPDF } from 'jspdf'
+import { isAdminRole } from '../services/sessionAuth'
 import ThemeToggleButton from '../components/ThemeToggleButton.vue'
 
 const router = useRouter()
+const userRole = localStorage.getItem('userRole')
+
+const isUserAdmin = computed(() => isAdminRole(userRole))
 
 const SENSOR_META = {
   ph: { label: 'pH', unit: '', min: 6, max: 8.5 },
@@ -343,6 +402,8 @@ const currentTablePage = ref(1)
 const itemsPerPage = 10
 const showPdfModal = ref(false)
 const isGeneratingPdf = ref(false)
+const showExpandedPages = ref(false)
+const jumpToPageValue = ref(null)
 
 const pdfFilters = reactive({
   device: 'all',
@@ -394,6 +455,35 @@ const visibleMeasurementRows = computed(() => {
 
 const totalTablePages = computed(() => {
   return Math.ceil(measurementRowsFiltered.value.length / itemsPerPage) || 1
+})
+
+// Páginas visibles en la paginación principal (primeras 3)
+const visiblePaginationPages = computed(() => {
+  const pages = []
+  for (let i = 1; i <= Math.min(3, totalTablePages.value); i++) {
+    pages.push(i)
+  }
+  return pages
+})
+
+// Indica si debe mostrar el botón "..."
+const shouldShowEllipsis = computed(() => {
+  return totalTablePages.value > 3
+})
+
+// Últimas 3 páginas (mostradas al expandir con "...")
+const expandedPaginationPages = computed(() => {
+  const pages = []
+  const start = Math.max(4, totalTablePages.value - 2)
+  for (let i = start; i <= totalTablePages.value; i++) {
+    pages.push(i)
+  }
+  return pages
+})
+
+// Validar que el número de página para saltar sea válido
+const isValidPageJump = computed(() => {
+  return jumpToPageValue.value && jumpToPageValue.value >= 1 && jumpToPageValue.value <= totalTablePages.value
 })
 
 const filteredRowsForPdf = computed(() => {
@@ -928,6 +1018,19 @@ const nextTablePage = () => {
 const prevTablePage = () => {
   if (currentTablePage.value > 1) {
     currentTablePage.value -= 1
+    showExpandedPages.value = false
+  }
+}
+
+const toggleExpandedPagination = () => {
+  showExpandedPages.value = !showExpandedPages.value
+}
+
+const jumpToPage = () => {
+  if (isValidPageJump.value) {
+    currentTablePage.value = jumpToPageValue.value
+    jumpToPageValue.value = null
+    showExpandedPages.value = false
   }
 }
 
@@ -1744,6 +1847,94 @@ const downloadPDF = async () => {
   color: #666;
   text-align: center;
   width: 100%;
+}
+
+.pagination-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.pagination-jump-input {
+  width: 50px;
+  height: 32px;
+  padding: 4px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 12px;
+  text-align: center;
+}
+
+.pagination-jump-input:focus {
+  outline: none;
+  border-color: #66bb6a;
+  box-shadow: 0 0 0 2px rgba(102, 187, 106, 0.1);
+}
+
+.jump-btn {
+  padding: 6px 12px;
+  font-size: 11px;
+  min-width: 0;
+}
+
+.ellipsis-btn {
+  padding: 4px 8px;
+  font-size: 12px;
+  min-width: 0;
+}
+
+.expanded-pages {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.pagination-records {
+  font-size: 12px;
+  color: #999;
+  text-align: center;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.page-ellipsis-btn {
+  padding: 6px 8px;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.go-to-page {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.go-to-page label {
+  font-size: 12px;
+  color: #666;
+  white-space: nowrap;
+}
+
+.page-input {
+  width: 45px;
+  height: 32px;
+  padding: 4px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 12px;
+  text-align: center;
+}
+
+.page-input:focus {
+  outline: none;
+  border-color: #66bb6a;
+  box-shadow: 0 0 0 2px rgba(102, 187, 106, 0.1);
 }
 
 .pdf-modal-overlay {

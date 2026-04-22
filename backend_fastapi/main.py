@@ -4,7 +4,7 @@ import asyncio
 import math
 import random
 from datetime import datetime, timezone
-from typing import Literal, Optional
+from typing import Literal, Optional, Any
 from logging.handlers import RotatingFileHandler
 from zoneinfo import ZoneInfo
 
@@ -16,6 +16,19 @@ from pydantic import BaseModel, Field
 import requests
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
+
+# Importar servicio de Telegram
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "alertas"))
+from telegram_service import (
+    TelegramService,
+    SensorAlertPayload,
+    initialize_telegram,
+    send_sensor_alert,
+    get_telegram_subscribers,
+    get_telegram_stats
+)
 
 load_dotenv()
 
@@ -767,6 +780,19 @@ async def startup_event():
     global background_task
     logger.info("[START] Aplicacion iniciando...")
     
+    # Inicializar servicio de Telegram
+    try:
+        telegram_initialized = await initialize_telegram()
+        if telegram_initialized:
+            logger.info("[TELEGRAM] Servicio de Telegram inicializado")
+            # Iniciar polling en background
+            asyncio.create_task(TelegramService.start_polling())
+            logger.info("[TELEGRAM] Polling de Telegram iniciado en background")
+        else:
+            logger.warning("[TELEGRAM] No se pudo inicializar Telegram")
+    except Exception as e:
+        logger.error(f"[TELEGRAM] Error inicializando Telegram: {e}")
+    
     if SIMULATED_DATA_ENABLED:
         # Iniciar la tarea de background para generar datos simulados
         background_task = asyncio.create_task(simulated_data_background_task())
@@ -1068,7 +1094,7 @@ def list_alerts() -> list[AlertRecord]:
 
 
 @app.post("/api/alerts", response_model=AlertRecord, status_code=201, tags=["Alertas"])
-def create_alert(payload: AlertCreate) -> AlertRecord:
+async def create_alert(payload: AlertCreate) -> AlertRecord:
     now = chile_now()
     device_name = payload.nombreDispositivo or payload.embalse
     new_alert = AlertRecord(
@@ -1081,12 +1107,29 @@ def create_alert(payload: AlertCreate) -> AlertRecord:
     )
 
     if measurement_is_out_of_range(payload):
+        # Enviar por email
         send_mailersend_notification(
             device_name=device_name,
             sensor=payload.sensor,
             medicion=payload.medicion,
             now=now,
         )
+        
+        # Enviar por Telegram
+        try:
+            telegram_alert = SensorAlertPayload(
+                deviceName=device_name,
+                ph=float(payload.valor) if payload.valor else 0.0,
+                temperature=float(payload.valor) if payload.valor else 0.0,
+                conductivity=float(payload.valor) if payload.valor else 0.0,
+                date=now.strftime("%Y-%m-%d"),
+                time=now.strftime("%H:%M:%S"),
+            )
+            result = await send_sensor_alert(telegram_alert)
+            if result.get("status") == "ok":
+                logger.info(f"[TELEGRAM] Alerta enviada a {result.get('sent', 0)} chats")
+        except Exception as e:
+            logger.error(f"[TELEGRAM] Error enviando alerta: {e}")
 
     alerts_store.append(new_alert)
     return new_alert
@@ -1136,6 +1179,119 @@ def get_mongodb_all_data() -> dict:
             "error": True,
             "message": f"Error: {str(e)}",
             "data": []
+        }
+
+
+# ============================================================================
+# ENDPOINTS DE TELEGRAM
+# ============================================================================
+
+# Helper para asegurar que el bot está inicializado
+async def ensure_telegram_initialized():
+    """Asegurar que el servicio de Telegram está inicializado."""
+    stats = get_telegram_stats()
+    if not stats.get("bot_initialized"):
+        logger.info("[TELEGRAM] Bot no inicializado, intentando inicializar...")
+        try:
+            success = await initialize_telegram()
+            if success:
+                asyncio.create_task(TelegramService.start_polling())
+                logger.info("[TELEGRAM] Bot inicializado exitosamente")
+            else:
+                logger.warning("[TELEGRAM] No se pudo inicializar el bot")
+        except Exception as e:
+            logger.error(f"[TELEGRAM] Error inicializando: {e}")
+
+
+@app.get("/api/telegram/stats", tags=["Telegram"])
+async def get_telegram_statistics() -> dict[str, Any]:
+    """Obtener estadísticas del servicio de Telegram."""
+    await ensure_telegram_initialized()
+    return get_telegram_stats()
+
+
+@app.get("/api/telegram/subscribers", tags=["Telegram"])
+async def list_telegram_subscribers() -> dict[str, Any]:
+    """Obtener lista de suscriptores de Telegram."""
+    await ensure_telegram_initialized()
+    subscribers = get_telegram_subscribers()
+    return {
+        "count": len(subscribers),
+        "subscribers": sorted(list(subscribers)),
+    }
+
+
+@app.post("/api/telegram/test-alert", tags=["Telegram"])
+async def send_test_alert() -> dict[str, Any]:
+    """Enviar alerta de prueba a todos los suscriptores."""
+    await ensure_telegram_initialized()
+    now = chile_now()
+    test_alert = SensorAlertPayload(
+        deviceName="Embalse PRUEBA",
+        ph=7.5,
+        temperature=25.0,
+        conductivity=1500.0,
+        date=now.strftime("%Y-%m-%d"),
+        time=now.strftime("%H:%M:%S"),
+    )
+    
+    result = await send_sensor_alert(test_alert)
+    return {
+        "status": result.get("status"),
+        "message": "Alerta de prueba enviada",
+        "sent": result.get("sent"),
+        "failed": result.get("failed"),
+        "subscribers": result.get("subscribers"),
+    }
+
+
+@app.post("/api/telegram/test-alert-out-of-range", tags=["Telegram"])
+async def send_test_alert_out_of_range() -> dict[str, Any]:
+    """Enviar alerta de FUERA DE RANGO para pruebas."""
+    await ensure_telegram_initialized()
+    now = chile_now()
+    test_alert = SensorAlertPayload(
+        deviceName="Embalse Arándanos - Sector Norte",
+        ph=3.5,  # Fuera de rango (menor que 6.0)
+        temperature=40.0,  # Fuera de rango (mayor que 35.0)
+        conductivity=2500.0,  # Fuera de rango (mayor que 2000.0)
+        date=now.strftime("%Y-%m-%d"),
+        time=now.strftime("%H:%M:%S"),
+    )
+    
+    result = await send_sensor_alert(test_alert)
+    return {
+        "status": result.get("status"),
+        "message": "Alerta de prueba (FUERA DE RANGO) enviada",
+        "sent": result.get("sent"),
+        "failed": result.get("failed"),
+        "subscribers": result.get("subscribers"),
+    }
+
+
+@app.post("/api/telegram/init", tags=["Telegram"])
+async def initialize_telegram_service() -> dict[str, Any]:
+    """Inicializar servicio de Telegram manualmente (útil para debugging)."""
+    try:
+        success = await initialize_telegram()
+        if success:
+            # iniciar polling en background
+            asyncio.create_task(TelegramService.start_polling())
+            return {
+                "status": "success",
+                "message": "Servicio de Telegram inicializado manualmente",
+                "polling": "iniciado en background"
+            }
+        else:
+            return {
+                "status": "error",
+                "message": "No se pudo inicializar el servicio de Telegram"
+            }
+    except Exception as e:
+        logger.error(f"Error inicializando Telegram manualmente: {e}")
+        return {
+            "status": "error",
+            "message": str(e)
         }
 
 
