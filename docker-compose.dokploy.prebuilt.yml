@@ -1,0 +1,58 @@
+version: '3.8'
+
+# =============================================================================
+# docker-compose.dokploy.prebuilt.yml
+#
+# Usa imagenes pre-buildeadas subidas a Docker Hub.
+# No requiere acceso al repositorio Git.
+#
+# Pasos previos (una vez por cambio de codigo):
+#   .\build-push-all.ps1 -DockerHubUser "doriajacke"
+#
+# Variables requeridas en Dokploy > Environment:
+#   FRONTEND_IMAGE, BACKEND_IMAGE, MONGODB_URL, JWT_SECRET
+# =============================================================================
+
+services:
+  backend:
+    image: ${BACKEND_IMAGE:-doriajacke/arandanos-backend:latest}
+    pull_policy: always
+    restart: always
+    environment:
+      MONGODB_URL: ${MONGODB_URL}
+      MONGODB_DB: ${MONGODB_DB:-SensoresEmbalse1}
+      SIMULATED_DATA_ENABLED: ${SIMULATED_DATA_ENABLED:-false}
+      MAILERSEND_API_TOKEN: ${MAILERSEND_API_TOKEN:-}
+      MAILERSEND_FROM_EMAIL: ${MAILERSEND_FROM_EMAIL:-}
+      MAILERSEND_FROM_NAME: ${MAILERSEND_FROM_NAME:-Monitoreo Embalse Arandanos}
+      MAILERSEND_TO_EMAILS: ${MAILERSEND_TO_EMAILS:-}
+      MAILERSEND_TEMPLATE_ID: ${MAILERSEND_TEMPLATE_ID:-}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_MINUTES_ADMIN: ${JWT_ACCESS_MINUTES_ADMIN:-30}
+      JWT_ACCESS_HOURS_EMPLOYEE: ${JWT_ACCESS_HOURS_EMPLOYEE:-8}
+      JWT_REFRESH_DAYS: ${JWT_REFRESH_DAYS:-7}
+      AUTH_DEMO_PASSWORD: ${AUTH_DEMO_PASSWORD:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      WEBAPP_URL: ${WEBAPP_URL:-}
+      API_PORT: 80
+      API_HOST: 0.0.0.0
+    expose:
+      - "80"
+    networks:
+      - arandanos-network
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-doriajacke/arandanos-frontend:latest}
+    pull_policy: always
+    restart: always
+    depends_on:
+      - backend
+    expose:
+      - "8000"
+    networks:
+      - arandanos-network
+
+networks:
+  arandanos-network:
+    driver: bridge
