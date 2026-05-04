@@ -73,62 +73,31 @@
         <SensorCard
           sensor-name="pH"
           :value="sensors.ph.value"
-          :min="SENSOR_LIMITS.ph.min"
-          :max="SENSOR_LIMITS.ph.max"
-          :safe-max="SENSOR_LIMITS.ph.safeMax"
+          :min="SENSOR_LIMITS.value.ph.safe_min"
+          :max="SENSOR_LIMITS.value.ph.safe_max"
+          :safe-max="SENSOR_LIMITS.value.ph.safe_max"
           unit="pH"
           :last-updated="lastSync"
         />
         <SensorCard
           sensor-name="Temperatura"
           :value="sensors.temperature.value"
-          :min="SENSOR_LIMITS.temperature.min"
-          :max="SENSOR_LIMITS.temperature.max"
-          :safe-max="SENSOR_LIMITS.temperature.safeMax"
+          :min="SENSOR_LIMITS.value.temperature.safe_min"
+          :max="SENSOR_LIMITS.value.temperature.safe_max"
+          :safe-max="SENSOR_LIMITS.value.temperature.safe_max"
           unit="°C"
           :last-updated="lastSync"
         />
         <SensorCard
           sensor-name="Conductividad Eléctrica"
           :value="sensors.conductivity.value"
-          :min="SENSOR_LIMITS.conductivity.min"
-          :max="SENSOR_LIMITS.conductivity.max"
-          :safe-max="SENSOR_LIMITS.conductivity.safeMax"
+          :min="SENSOR_LIMITS.value.conductivity.safe_min"
+          :max="SENSOR_LIMITS.value.conductivity.safe_max"
+          :safe-max="SENSOR_LIMITS.value.conductivity.safe_max"
           unit="µS/cm"
           :last-updated="lastSync"
         />
       </div>
-
-      <section class="diagnostics-section">
-        <div class="alerts-header">
-          <h2 class="section-title">Diagnóstico de solicitudes (tiempo real)</h2>
-          <span class="alerts-count">Actualiza cada 5s</span>
-        </div>
-        <div class="diagnostics-grid">
-          <div class="diagnostic-card">
-            <div class="diagnostic-title">Dashboard (/api/dashboard)</div>
-            <div class="diagnostic-row"><span>Intentos</span><strong>{{ requestMonitor.dashboard.attempts }}</strong></div>
-            <div class="diagnostic-row"><span>Exitosas</span><strong>{{ requestMonitor.dashboard.ok }}</strong></div>
-            <div class="diagnostic-row"><span>Errores</span><strong>{{ requestMonitor.dashboard.error }}</strong></div>
-            <div class="diagnostic-row"><span>Estado</span><strong>{{ requestMonitor.dashboard.lastStatus }}</strong></div>
-            <div class="diagnostic-row"><span>Último dato</span><strong>{{ requestMonitor.dashboard.lastSuccessAt }}</strong></div>
-          </div>
-          <div class="diagnostic-card">
-            <div class="diagnostic-title">Historial (/api/sensors/history)</div>
-            <div class="diagnostic-row"><span>Intentos</span><strong>{{ requestMonitor.history.attempts }}</strong></div>
-            <div class="diagnostic-row"><span>Exitosas</span><strong>{{ requestMonitor.history.ok }}</strong></div>
-            <div class="diagnostic-row"><span>Errores</span><strong>{{ requestMonitor.history.error }}</strong></div>
-            <div class="diagnostic-row"><span>Estado</span><strong>{{ requestMonitor.history.lastStatus }}</strong></div>
-            <div class="diagnostic-row"><span>Último dato</span><strong>{{ requestMonitor.history.lastSuccessAt }}</strong></div>
-          </div>
-          <div class="diagnostic-card">
-            <div class="diagnostic-title">Render del frontend</div>
-            <div class="diagnostic-row"><span>Última pintura</span><strong>{{ requestMonitor.ui.lastRenderedAt }}</strong></div>
-            <div class="diagnostic-row"><span>Último error</span><strong>{{ requestMonitor.ui.lastError }}</strong></div>
-            <div class="diagnostic-row"><span>Dispositivo</span><strong>{{ selectedDevice.status === 'connected' ? 'Conectado' : 'Desconectado' }}</strong></div>
-          </div>
-        </div>
-      </section>
 
       <section class="alerts-section">
         <div class="alerts-header">
@@ -216,54 +185,132 @@
         </div>
 
         <div class="alerts-config-grid">
+          <!-- pH -->
           <div class="alert-config-card">
             <h3>🔬 pH</h3>
-            <div class="config-group">
-              <label>Minimo:</label>
-              <input v-model.number="editingLimits.ph.min" type="number" step="0.1" />
+            
+            <div class="config-level">
+              <h4>🔴 Peligroso</h4>
+              <div class="config-group">
+                <label>Mínimo:</label>
+                <input v-model.number="editingLimits.ph.danger_min" type="number" step="0.1" />
+              </div>
+              <div class="config-group">
+                <label>Máximo:</label>
+                <input v-model.number="editingLimits.ph.danger_max" type="number" step="0.1" />
+              </div>
             </div>
-            <div class="config-group">
-              <label>Maximo:</label>
-              <input v-model.number="editingLimits.ph.max" type="number" step="0.1" />
+            
+            <div class="config-level">
+              <h4>🟠 Advertencia</h4>
+              <div class="config-group">
+                <label>Mínimo:</label>
+                <input v-model.number="editingLimits.ph.warning_min" type="number" step="0.1" />
+              </div>
+              <div class="config-group">
+                <label>Máximo:</label>
+                <input v-model.number="editingLimits.ph.warning_max" type="number" step="0.1" />
+              </div>
             </div>
-            <div class="config-group">
-              <label>Maximo seguro:</label>
-              <input v-model.number="editingLimits.ph.safeMax" type="number" step="0.1" />
+            
+            <div class="config-level">
+              <h4>🟢 Seguro</h4>
+              <div class="config-group">
+                <label>Mínimo:</label>
+                <input v-model.number="editingLimits.ph.safe_min" type="number" step="0.1" />
+              </div>
+              <div class="config-group">
+                <label>Máximo:</label>
+                <input v-model.number="editingLimits.ph.safe_max" type="number" step="0.1" />
+              </div>
             </div>
+            
             <button class="save-config-btn" @click="saveAlertConfig('ph')">Guardar pH</button>
           </div>
 
+          <!-- Temperatura -->
           <div class="alert-config-card">
             <h3>🌡️ Temperatura (°C)</h3>
-            <div class="config-group">
-              <label>Minimo:</label>
-              <input v-model.number="editingLimits.temperature.min" type="number" step="1" />
+            
+            <div class="config-level">
+              <h4>🔴 Peligroso</h4>
+              <div class="config-group">
+                <label>Mínimo:</label>
+                <input v-model.number="editingLimits.temperature.danger_min" type="number" step="1" />
+              </div>
+              <div class="config-group">
+                <label>Máximo:</label>
+                <input v-model.number="editingLimits.temperature.danger_max" type="number" step="1" />
+              </div>
             </div>
-            <div class="config-group">
-              <label>Maximo:</label>
-              <input v-model.number="editingLimits.temperature.max" type="number" step="1" />
+            
+            <div class="config-level">
+              <h4>🟠 Advertencia</h4>
+              <div class="config-group">
+                <label>Mínimo:</label>
+                <input v-model.number="editingLimits.temperature.warning_min" type="number" step="1" />
+              </div>
+              <div class="config-group">
+                <label>Máximo:</label>
+                <input v-model.number="editingLimits.temperature.warning_max" type="number" step="1" />
+              </div>
             </div>
-            <div class="config-group">
-              <label>Maximo seguro:</label>
-              <input v-model.number="editingLimits.temperature.safeMax" type="number" step="1" />
+            
+            <div class="config-level">
+              <h4>🟢 Seguro</h4>
+              <div class="config-group">
+                <label>Mínimo:</label>
+                <input v-model.number="editingLimits.temperature.safe_min" type="number" step="1" />
+              </div>
+              <div class="config-group">
+                <label>Máximo:</label>
+                <input v-model.number="editingLimits.temperature.safe_max" type="number" step="1" />
+              </div>
             </div>
+            
             <button class="save-config-btn" @click="saveAlertConfig('temperature')">Guardar temperatura</button>
           </div>
 
+          <!-- Conductividad -->
           <div class="alert-config-card">
             <h3>⚡ Conductividad (µS/cm)</h3>
-            <div class="config-group">
-              <label>Minimo:</label>
-              <input v-model.number="editingLimits.conductivity.min" type="number" step="10" />
+            
+            <div class="config-level">
+              <h4>🔴 Peligroso</h4>
+              <div class="config-group">
+                <label>Mínimo:</label>
+                <input v-model.number="editingLimits.conductivity.danger_min" type="number" step="10" />
+              </div>
+              <div class="config-group">
+                <label>Máximo:</label>
+                <input v-model.number="editingLimits.conductivity.danger_max" type="number" step="10" />
+              </div>
             </div>
-            <div class="config-group">
-              <label>Maximo:</label>
-              <input v-model.number="editingLimits.conductivity.max" type="number" step="10" />
+            
+            <div class="config-level">
+              <h4>🟠 Advertencia</h4>
+              <div class="config-group">
+                <label>Mínimo:</label>
+                <input v-model.number="editingLimits.conductivity.warning_min" type="number" step="10" />
+              </div>
+              <div class="config-group">
+                <label>Máximo:</label>
+                <input v-model.number="editingLimits.conductivity.warning_max" type="number" step="10" />
+              </div>
             </div>
-            <div class="config-group">
-              <label>Maximo seguro:</label>
-              <input v-model.number="editingLimits.conductivity.safeMax" type="number" step="10" />
+            
+            <div class="config-level">
+              <h4>🟢 Seguro</h4>
+              <div class="config-group">
+                <label>Mínimo:</label>
+                <input v-model.number="editingLimits.conductivity.safe_min" type="number" step="10" />
+              </div>
+              <div class="config-group">
+                <label>Máximo:</label>
+                <input v-model.number="editingLimits.conductivity.safe_max" type="number" step="10" />
+              </div>
             </div>
+            
             <button class="save-config-btn" @click="saveAlertConfig('conductivity')">Guardar conductividad</button>
           </div>
         </div>
@@ -522,9 +569,9 @@ const DATA_MODE = import.meta.env.VITE_DATA_MODE || 'real'
 const ALERT_TABLE_LIMIT = 5
 
 let SENSOR_LIMITS = ref({
-  ph: { min: 6.0, max: 8.5, safeMax: 8.0 },
-  temperature: { min: 5, max: 35, safeMax: 28 },
-  conductivity: { min: 100, max: 2000, safeMax: 1500 }
+  ph: { danger_min: 0, danger_max: 5.5, warning_min: 5.5, warning_max: 6.5, safe_min: 6.5, safe_max: 8.5 },
+  temperature: { danger_min: 0, danger_max: 10, warning_min: 10, warning_max: 15, safe_min: 15, safe_max: 30 },
+  conductivity: { danger_min: 0, danger_max: 100, warning_min: 100, warning_max: 500, safe_min: 500, safe_max: 2000 }
 })
 
 // Estado para prevenir guardado automático - solo se guarda cuando usuario hace click en botón
@@ -533,9 +580,9 @@ const hasUnsavedChanges = ref(false)
 
 // Estado para edición temporal - los cambios NO afectan los gráficos hasta guardar
 let editingLimits = ref({
-  ph: { min: 6.0, max: 8.5, safeMax: 8.0 },
-  temperature: { min: 5, max: 35, safeMax: 28 },
-  conductivity: { min: 100, max: 2000, safeMax: 1500 }
+  ph: { danger_min: 0, danger_max: 5.5, warning_min: 5.5, warning_max: 6.5, safe_min: 6.5, safe_max: 8.5 },
+  temperature: { danger_min: 0, danger_max: 10, warning_min: 10, warning_max: 15, safe_min: 15, safe_max: 30 },
+  conductivity: { danger_min: 0, danger_max: 100, warning_min: 100, warning_max: 500, safe_min: 500, safe_max: 2000 }
 })
 
 const currentView = ref('devices')
@@ -598,27 +645,6 @@ const historyFilters = ref({
   date: 'all'
 })
 const lastProcessedAlertTimestamp = ref(0)
-
-const requestMonitor = ref({
-  dashboard: {
-    attempts: 0,
-    ok: 0,
-    error: 0,
-    lastStatus: 'sin solicitudes',
-    lastSuccessAt: 'sin datos'
-  },
-  history: {
-    attempts: 0,
-    ok: 0,
-    error: 0,
-    lastStatus: 'sin solicitudes',
-    lastSuccessAt: 'sin datos'
-  },
-  ui: {
-    lastRenderedAt: 'sin render',
-    lastError: 'sin errores'
-  }
-})
 
 const getStatus = (value, min, max) => {
   const percentage = ((value - min) / (max - min)) * 100
@@ -818,18 +844,10 @@ const formatLastSync = (value) => {
 }
 
 const loadHistoryFromApi = async () => {
-  requestMonitor.value.history.attempts += 1
   const rows = await fetchSensorHistory(300)
   if (!Array.isArray(rows)) {
-    requestMonitor.value.history.error += 1
-    requestMonitor.value.history.lastStatus = 'error'
-    requestMonitor.value.ui.lastError = 'Fallo GET /api/sensors/history'
     return
   }
-
-  requestMonitor.value.history.ok += 1
-  requestMonitor.value.history.lastStatus = IS_SIMULATED_MODE ? `simulated (${rows.length} filas)` : `ok (${rows.length} filas)`
-  requestMonitor.value.history.lastSuccessAt = formatDateTime(new Date())
 
   historyRecords.value = rows.map((item) =>
     createRecord({
@@ -842,13 +860,9 @@ const loadHistoryFromApi = async () => {
 }
 
 const loadDashboardFromApi = async () => {
-  requestMonitor.value.dashboard.attempts += 1
   const dashboard = await fetchDashboardData()
   console.log('[DEBUG] Respuesta de /api/dashboard:', dashboard)
   if (!dashboard) {
-    requestMonitor.value.dashboard.error += 1
-    requestMonitor.value.dashboard.lastStatus = 'error'
-    requestMonitor.value.ui.lastError = 'Fallo GET /api/dashboard'
     devices.value[0] = {
       ...devices.value[0],
       status: 'disconnected',
@@ -859,10 +873,6 @@ const loadDashboardFromApi = async () => {
     lastSync.value = 'Sin datos del Arduino'
     return
   }
-
-  requestMonitor.value.dashboard.ok += 1
-  requestMonitor.value.dashboard.lastStatus = IS_SIMULATED_MODE ? 'simulated' : 'ok'
-  requestMonitor.value.dashboard.lastSuccessAt = formatDateTime(new Date())
 
   let dataSource = IS_SIMULATED_MODE ? 'simulated' : 'real'
   if (!IS_SIMULATED_MODE) {
@@ -963,8 +973,28 @@ const saveAlertConfig = async (sensorType) => {
 
     // Validar que los valores sean sensatos
     const limits = editingLimits.value[sensorType]
-    if (limits.min >= limits.max) {
-      alert(`❌ Error: El valor mínimo debe ser menor al máximo para ${sensorType}`)
+    
+    // Validar que cada rango tenga min < max
+    if (limits.danger_min >= limits.danger_max) {
+      alert(`❌ Error: El mínimo peligroso debe ser menor al máximo peligroso para ${sensorType}`)
+      return
+    }
+    if (limits.warning_min >= limits.warning_max) {
+      alert(`❌ Error: El mínimo de advertencia debe ser menor al máximo de advertencia para ${sensorType}`)
+      return
+    }
+    if (limits.safe_min >= limits.safe_max) {
+      alert(`❌ Error: El mínimo seguro debe ser menor al máximo seguro para ${sensorType}`)
+      return
+    }
+    
+    // Validar que los rangos no se superpongan
+    if (limits.danger_max > limits.warning_min) {
+      alert(`❌ Error: El rango peligroso y de advertencia se superponen para ${sensorType}`)
+      return
+    }
+    if (limits.warning_max > limits.safe_min) {
+      alert(`❌ Error: El rango de advertencia y seguro se superponen para ${sensorType}`)
       return
     }
 
@@ -988,7 +1018,7 @@ const saveAlertConfig = async (sensorType) => {
   } finally {
     isCreatingUser.value = false
   }
-}
+}}
 
 const createNewUser = async () => {
   const sanitizedEmail = String(newUser.value.email || '').trim().toLowerCase()
@@ -1100,8 +1130,6 @@ const updateSensorData = async () => {
   if (currentView.value === 'dashboard' || currentView.value === 'history') {
     await loadHistoryFromApi()
   }
-
-  requestMonitor.value.ui.lastRenderedAt = formatDateTime(new Date())
 
   if (currentView.value !== 'dashboard') return
   if (IS_SIMULATED_MODE) return
@@ -1580,6 +1608,33 @@ onUnmounted(() => {
   box-shadow: 0 0 0 3px rgba(255, 152, 0, 0.1);
 }
 
+.config-level {
+  background: #fff;
+  border-left: 4px solid #ccc;
+  padding: 12px;
+  border-radius: 4px;
+  margin-bottom: 12px;
+}
+
+.config-level h4 {
+  margin-top: 0;
+  margin-bottom: 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.config-level:has(h4:contains("🔴")) {
+  border-left-color: #ff4444;
+}
+
+.config-level:has(h4:contains("🟠")) {
+  border-left-color: #ff9800;
+}
+
+.config-level:has(h4:contains("🟢")) {
+  border-left-color: #4caf50;
+}
+
 .save-config-btn {
   background: #4caf50;
   color: white;
@@ -1797,7 +1852,6 @@ onUnmounted(() => {
   font-size: 13px;
 }
 
-.diagnostics-section,
 .alerts-section,
 .filters-section,
 .charts-section {
@@ -1920,39 +1974,6 @@ onUnmounted(() => {
 .chart-card h3 {
   margin-bottom: 8px;
   font-size: 14px;
-}
-
-.diagnostics-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 12px;
-}
-
-.diagnostic-card {
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 12px;
-  background: #f9fafb;
-}
-
-.diagnostic-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: #1f2937;
-  margin-bottom: 10px;
-}
-
-.diagnostic-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 12px;
-  color: #4b5563;
-  margin-top: 6px;
-}
-
-.diagnostic-row strong {
-  color: #111827;
 }
 
 .line-chart {
@@ -2282,7 +2303,6 @@ html[data-theme='dark'] .info-card-value.user-role {
   background: rgba(30, 58, 95, 0.45);
 }
 
-html[data-theme='dark'] .diagnostics-section,
 html[data-theme='dark'] .alerts-section,
 html[data-theme='dark'] .filters-section,
 html[data-theme='dark'] .charts-section {
@@ -2293,23 +2313,6 @@ html[data-theme='dark'] .charts-section {
 
 html[data-theme='dark'] .alerts-count {
   color: #94a3b8;
-}
-
-html[data-theme='dark'] .diagnostic-card {
-  background: #2e3240;
-  border-color: #3d4254;
-}
-
-html[data-theme='dark'] .diagnostic-title {
-  color: #f1f5f9;
-}
-
-html[data-theme='dark'] .diagnostic-row {
-  color: #cbd5e1;
-}
-
-html[data-theme='dark'] .diagnostic-row strong {
-  color: #f8fafc;
 }
 
 html[data-theme='dark'] .table-wrap {
@@ -2393,6 +2396,15 @@ html[data-theme='dark'] .alert-config-card {
 
 html[data-theme='dark'] .alert-config-card h3 {
   color: #f1f5f9;
+}
+
+html[data-theme='dark'] .config-level {
+  background: #1a1d26;
+  border-left-color: #666;
+}
+
+html[data-theme='dark'] .config-level h4 {
+  color: #e2e8f0;
 }
 
 html[data-theme='dark'] .config-group label {

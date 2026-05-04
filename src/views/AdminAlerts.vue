@@ -13,72 +13,242 @@
         <form @submit.prevent="handleSaveAlerts" class="alert-form">
           <div class="alert-group">
             <h4>pH</h4>
-            <div class="input-row">
-              <div class="input-group">
-                <label>Mínimo</label>
-                <input
-                  v-model.number="globalAlerts.ph_min"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="14"
-                />
-              </div>
-              <div class="input-group">
-                <label>Máximo</label>
-                <input
-                  v-model.number="globalAlerts.ph_max"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="14"
-                />
+            
+            <div class="alert-level">
+              <h5>🔴 Rango Peligroso</h5>
+              <div class="input-row">
+                <div class="input-group">
+                  <label>Mínimo</label>
+                  <input
+                    v-model.number="globalAlerts.ph.danger_min"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="14"
+                  />
+                </div>
+                <div class="input-group">
+                  <label>Máximo</label>
+                  <input
+                    v-model.number="globalAlerts.ph.danger_max"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="14"
+                  />
+                </div>
               </div>
             </div>
-            <div class="alert-info">✓ Rango normal: 6.5 - 8.5</div>
+
+            <div class="alert-level">
+              <h5>🟠 Rango Advertencia</h5>
+              <div class="input-row">
+                <div class="input-group">
+                  <label>Mínimo</label>
+                  <input
+                    v-model.number="globalAlerts.ph.warning_min"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="14"
+                  />
+                </div>
+                <div class="input-group">
+                  <label>Máximo</label>
+                  <input
+                    v-model.number="globalAlerts.ph.warning_max"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="14"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div class="alert-level">
+              <h5>🟢 Rango Seguro</h5>
+              <div class="input-row">
+                <div class="input-group">
+                  <label>Mínimo</label>
+                  <input
+                    v-model.number="globalAlerts.ph.safe_min"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="14"
+                  />
+                </div>
+                <div class="input-group">
+                  <label>Máximo</label>
+                  <input
+                    v-model.number="globalAlerts.ph.safe_max"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="14"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="alert-group">
             <h4>Temperatura (°C)</h4>
-            <div class="input-row">
-              <div class="input-group">
-                <label>Mínimo</label>
-                <input
-                  v-model.number="globalAlerts.temp_min"
-                  type="number"
-                  step="0.1"
-                  min="-50"
-                  max="50"
-                />
-              </div>
-              <div class="input-group">
-                <label>Máximo</label>
-                <input
-                  v-model.number="globalAlerts.temp_max"
-                  type="number"
-                  step="0.1"
-                  min="-50"
-                  max="50"
-                />
+            
+            <div class="alert-level">
+              <h5>🔴 Rango Peligroso</h5>
+              <div class="input-row">
+                <div class="input-group">
+                  <label>Mínimo</label>
+                  <input
+                    v-model.number="globalAlerts.temperature.danger_min"
+                    type="number"
+                    step="0.1"
+                    min="-50"
+                    max="50"
+                  />
+                </div>
+                <div class="input-group">
+                  <label>Máximo</label>
+                  <input
+                    v-model.number="globalAlerts.temperature.danger_max"
+                    type="number"
+                    step="0.1"
+                    min="-50"
+                    max="50"
+                  />
+                </div>
               </div>
             </div>
-            <div class="alert-info">✓ Rango normal: 15 - 30</div>
+
+            <div class="alert-level">
+              <h5>🟠 Rango Advertencia</h5>
+              <div class="input-row">
+                <div class="input-group">
+                  <label>Mínimo</label>
+                  <input
+                    v-model.number="globalAlerts.temperature.warning_min"
+                    type="number"
+                    step="0.1"
+                    min="-50"
+                    max="50"
+                  />
+                </div>
+                <div class="input-group">
+                  <label>Máximo</label>
+                  <input
+                    v-model.number="globalAlerts.temperature.warning_max"
+                    type="number"
+                    step="0.1"
+                    min="-50"
+                    max="50"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div class="alert-level">
+              <h5>🟢 Rango Seguro</h5>
+              <div class="input-row">
+                <div class="input-group">
+                  <label>Mínimo</label>
+                  <input
+                    v-model.number="globalAlerts.temperature.safe_min"
+                    type="number"
+                    step="0.1"
+                    min="-50"
+                    max="50"
+                  />
+                </div>
+                <div class="input-group">
+                  <label>Máximo</label>
+                  <input
+                    v-model.number="globalAlerts.temperature.safe_max"
+                    type="number"
+                    step="0.1"
+                    min="-50"
+                    max="50"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="alert-group">
-            <h4>Turbidez (NTU)</h4>
-            <div class="input-row">
-              <div class="input-group">
-                <label>Máximo</label>
-                <input
-                  v-model.number="globalAlerts.turbidity_max"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                />
+            <h4>Conductividad (µS/cm)</h4>
+            
+            <div class="alert-level">
+              <h5>🔴 Rango Peligroso</h5>
+              <div class="input-row">
+                <div class="input-group">
+                  <label>Mínimo</label>
+                  <input
+                    v-model.number="globalAlerts.conductivity.danger_min"
+                    type="number"
+                    step="1"
+                    min="0"
+                  />
+                </div>
+                <div class="input-group">
+                  <label>Máximo</label>
+                  <input
+                    v-model.number="globalAlerts.conductivity.danger_max"
+                    type="number"
+                    step="1"
+                    min="0"
+                  />
+                </div>
               </div>
             </div>
-            <div class="alert-info">✓ Rango normal: 0 - 5</div>
+
+            <div class="alert-level">
+              <h5>🟠 Rango Advertencia</h5>
+              <div class="input-row">
+                <div class="input-group">
+                  <label>Mínimo</label>
+                  <input
+                    v-model.number="globalAlerts.conductivity.warning_min"
+                    type="number"
+                    step="1"
+                    min="0"
+                  />
+                </div>
+                <div class="input-group">
+                  <label>Máximo</label>
+                  <input
+                    v-model.number="globalAlerts.conductivity.warning_max"
+                    type="number"
+                    step="1"
+                    min="0"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div class="alert-level">
+              <h5>🟢 Rango Seguro</h5>
+              <div class="input-row">
+                <div class="input-group">
+                  <label>Mínimo</label>
+                  <input
+                    v-model.number="globalAlerts.conductivity.safe_min"
+                    type="number"
+                    step="1"
+                    min="0"
+                  />
+                </div>
+                <div class="input-group">
+                  <label>Máximo</label>
+                  <input
+                    v-model.number="globalAlerts.conductivity.safe_max"
+                    type="number"
+                    step="1"
+                    min="0"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
 
           <div v-if="alertSuccess" class="success-message">
@@ -195,19 +365,57 @@ const userAlertSuccess = ref(false)
 const GLOBAL_LIMITS_KEY = 'globalAlertLimits'
 
 const globalAlerts = ref({
-  ph_min: 6.5,
-  ph_max: 8.5,
-  temp_min: 15,
-  temp_max: 30,
-  turbidity_max: 5,
+  ph: {
+    danger_min: 0,
+    danger_max: 5.5,
+    warning_min: 5.5,
+    warning_max: 6.5,
+    safe_min: 6.5,
+    safe_max: 8.5,
+  },
+  temperature: {
+    danger_min: 0,
+    danger_max: 10,
+    warning_min: 10,
+    warning_max: 15,
+    safe_min: 15,
+    safe_max: 30,
+  },
+  conductivity: {
+    danger_min: 0,
+    danger_max: 100,
+    warning_min: 100,
+    warning_max: 500,
+    safe_min: 500,
+    safe_max: 2000,
+  },
 })
 
 const defaultAlerts = {
-  ph_min: 6.5,
-  ph_max: 8.5,
-  temp_min: 15,
-  temp_max: 30,
-  turbidity_max: 5,
+  ph: {
+    danger_min: 0,
+    danger_max: 5.5,
+    warning_min: 5.5,
+    warning_max: 6.5,
+    safe_min: 6.5,
+    safe_max: 8.5,
+  },
+  temperature: {
+    danger_min: 0,
+    danger_max: 10,
+    warning_min: 10,
+    warning_max: 15,
+    safe_min: 15,
+    safe_max: 30,
+  },
+  conductivity: {
+    danger_min: 0,
+    danger_max: 100,
+    warning_min: 100,
+    warning_max: 500,
+    safe_min: 500,
+    safe_max: 2000,
+  },
 }
 
 // Cargar usuarios
@@ -238,15 +446,39 @@ const handleSaveAlerts = async () => {
   try {
     alertSuccess.value = false
     
-    // Validar que los valores sean válidos
-    if (globalAlerts.value.ph_min >= globalAlerts.value.ph_max) {
-      alert('❌ Error: El pH mínimo debe ser menor al pH máximo')
-      return
+    // Función auxiliar para validar un sensor
+    const validateSensor = (sensorName, sensorData) => {
+      // Validar que cada rango tenga min < max
+      if (sensorData.danger_min >= sensorData.danger_max) {
+        alert(`❌ Error en ${sensorName}: El mínimo peligroso debe ser menor al máximo peligroso`)
+        return false
+      }
+      if (sensorData.warning_min >= sensorData.warning_max) {
+        alert(`❌ Error en ${sensorName}: El mínimo de advertencia debe ser menor al máximo de advertencia`)
+        return false
+      }
+      if (sensorData.safe_min >= sensorData.safe_max) {
+        alert(`❌ Error en ${sensorName}: El mínimo seguro debe ser menor al máximo seguro`)
+        return false
+      }
+      
+      // Validar que los rangos estén correctamente ordenados
+      if (sensorData.danger_max > sensorData.warning_min) {
+        alert(`❌ Error en ${sensorName}: El rango peligroso y de advertencia se superponen`)
+        return false
+      }
+      if (sensorData.warning_max > sensorData.safe_min) {
+        alert(`❌ Error en ${sensorName}: El rango de advertencia y seguro se superponen`)
+        return false
+      }
+      
+      return true
     }
-    if (globalAlerts.value.temp_min >= globalAlerts.value.temp_max) {
-      alert('❌ Error: La temperatura mínima debe ser menor a la máxima')
-      return
-    }
+    
+    // Validar todos los sensores
+    if (!validateSensor('pH', globalAlerts.value.ph)) return
+    if (!validateSensor('Temperatura', globalAlerts.value.temperature)) return
+    if (!validateSensor('Conductividad', globalAlerts.value.conductivity)) return
 
     // Guardar en localStorage como límites globales predeterminados
     const limitsToSave = {
@@ -394,6 +626,7 @@ onMounted(() => {
   background: #f9f9f9;
   border-radius: 6px;
   border-left: 3px solid #667eea;
+  margin-bottom: 16px;
 }
 
 .alert-group h4,
@@ -401,6 +634,32 @@ onMounted(() => {
   margin: 0 0 12px 0;
   color: #333;
   font-size: 14px;
+}
+
+.alert-level {
+  padding: 12px;
+  background: #ffffff;
+  border-radius: 4px;
+  border-left: 3px solid #ccc;
+  margin-bottom: 12px;
+}
+
+.alert-level h5 {
+  margin: 0 0 10px 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.alert-level:has(h5:contains("🔴")) {
+  border-left-color: #ff4444;
+}
+
+.alert-level:has(h5:contains("🟠")) {
+  border-left-color: #ffaa00;
+}
+
+.alert-level:has(h5:contains("🟢")) {
+  border-left-color: #44aa44;
 }
 
 .input-row {

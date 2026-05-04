@@ -54,39 +54,57 @@ export const checkAndSendAlerts = async (device, sensorLimits) => {
   const temperature = device.sensors.temperature
   const conductivity = device.sensors.conductivity
 
+  // Función auxiliar para determinar el nivel de riesgo
+  const getAlertLevel = (value, limits) => {
+    const { danger_min, danger_max, warning_min, warning_max, safe_min, safe_max } = limits
+    
+    if (value >= safe_min && value <= safe_max) {
+      return 'safe'
+    } else if (value >= warning_min && value <= warning_max) {
+      return 'warning'
+    } else if (value >= danger_min && value <= danger_max) {
+      return 'danger'
+    } else {
+      return 'danger' // Completamente fuera
+    }
+  }
+
   // Verificar pH
-  if (ph < sensorLimits.ph.min || ph > sensorLimits.ph.max) {
+  const phLevel = getAlertLevel(ph, sensorLimits.ph)
+  if (phLevel !== 'safe') {
     await sendAlertToBackend(
       device.name,
       'pH',
       ph,
-      `${ph.toFixed(2)} pH`,
-      sensorLimits.ph.min,
-      sensorLimits.ph.max
+      `${ph.toFixed(2)} pH (${phLevel})`,
+      sensorLimits.ph.safe_min,
+      sensorLimits.ph.safe_max
     )
   }
 
   // Verificar Temperatura
-  if (temperature < sensorLimits.temperature.min || temperature > sensorLimits.temperature.max) {
+  const tempLevel = getAlertLevel(temperature, sensorLimits.temperature)
+  if (tempLevel !== 'safe') {
     await sendAlertToBackend(
       device.name,
       'Temperatura',
       temperature,
-      `${temperature.toFixed(2)} °C`,
-      sensorLimits.temperature.min,
-      sensorLimits.temperature.max
+      `${temperature.toFixed(2)} °C (${tempLevel})`,
+      sensorLimits.temperature.safe_min,
+      sensorLimits.temperature.safe_max
     )
   }
 
   // Verificar Conductividad
-  if (conductivity < sensorLimits.conductivity.min || conductivity > sensorLimits.conductivity.max) {
+  const condLevel = getAlertLevel(conductivity, sensorLimits.conductivity)
+  if (condLevel !== 'safe') {
     await sendAlertToBackend(
       device.name,
       'Conductividad Eléctrica',
       conductivity,
-      `${conductivity.toFixed(0)} µS/cm`,
-      sensorLimits.conductivity.min,
-      sensorLimits.conductivity.max
+      `${conductivity.toFixed(0)} µS/cm (${condLevel})`,
+      sensorLimits.conductivity.safe_min,
+      sensorLimits.conductivity.safe_max
     )
   }
 }
