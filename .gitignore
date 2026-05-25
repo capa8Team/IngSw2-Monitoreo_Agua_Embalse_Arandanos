@@ -48,3 +48,4 @@ secrets/
 # Logs locales del backend (pueden contener datos de sesión)
 backend_fastapi/logs/
 !backend_fastapi/logs/.gitkeep
+backend_fastapi/app.log*

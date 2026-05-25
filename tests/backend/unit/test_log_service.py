@@ -2,7 +2,7 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend_fastapi"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "backend_fastapi"))
 
 from core.log_origins import LogLevel, LogOrigin, VALID_LEVELS, VALID_ORIGINS
 from core.log_sanitizer import hash_chat_id, sanitize_details
