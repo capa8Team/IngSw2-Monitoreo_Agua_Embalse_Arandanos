@@ -14,18 +14,23 @@ function normalizeSupabaseUrl(url) {
 
 const SUPABASE_URL = normalizeSupabaseUrl(RAW_SUPABASE_URL)
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  console.error('Variables de Supabase no configuradas. Verifica VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY en .env')
-}
+const supabaseConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY)
 
-export const supabase = createClient(SUPABASE_URL || '', SUPABASE_ANON_KEY || '')
+export const supabase = supabaseConfigured
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null
+
+const requireClient = () => {
+  if (!supabase) throw new Error('Supabase no configurado')
+  return supabase
+}
 
 // Funciones auxiliares para autenticación
 export const authService = {
   // Registrar nuevo usuario
   async signup(email, password, fullName) {
     try {
-      const { data, error } = await supabase.auth.signUp({
+      const { data, error } = await requireClient().auth.signUp({
         email,
         password,
         options: {
@@ -46,13 +51,8 @@ export const authService = {
   // Iniciar sesión
   async login(email, password) {
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-
+      const { data, error } = await requireClient().auth.signInWithPassword({ email, password })
       if (error) throw error
-
       return { success: true, data }
     } catch (error) {
       return { success: false, error: error.message }
@@ -62,7 +62,7 @@ export const authService = {
   // Cerrar sesión
   async logout() {
     try {
-      const { error } = await supabase.auth.signOut()
+      const { error } = await requireClient().auth.signOut()
       if (error) throw error
       return { success: true }
     } catch (error) {
@@ -73,11 +73,11 @@ export const authService = {
   // Obtener usuario actual
   async getCurrentUser() {
     try {
-      const { data: { user }, error } = await supabase.auth.getUser()
+      const { data: { user }, error } = await requireClient().auth.getUser()
       if (error) throw error
       return user
     } catch (error) {
-      if (/auth session missing/i.test(String(error?.message || ''))) {
+      if (/auth session missing|no configurado/i.test(String(error?.message || ''))) {
         return null
       }
       console.error('Error obteniendo usuario:', error)
@@ -88,12 +88,11 @@ export const authService = {
   // Obtener rol del usuario desde la tabla users_roles
   async getUserRole(userId) {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await requireClient()
         .from('users_roles')
         .select('role')
         .eq('id', userId)
         .single()
-
       if (error) throw error
       return data?.role || 'user'
     } catch (error) {
@@ -105,32 +104,14 @@ export const authService = {
   // Crear usuario como administrador (solo admin)
   async createUserAsAdmin(email, password, fullName, role = 'user') {
     try {
-      // Crear usuario en auth
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fullName,
-          },
-        },
+      const { data: authData, error: authError } = await requireClient().auth.signUp({
+        email, password, options: { data: { full_name: fullName } },
       })
-
       if (authError) throw authError
 
-      // Crear entrada en tabla users_roles
-      const { error: roleError } = await supabase
+      const { error: roleError } = await requireClient()
         .from('users_roles')
-        .insert([
-          {
-            id: authData.user.id,
-            email: email,
-            role: role,
-            full_name: fullName,
-            created_at: new Date().toISOString(),
-          },
-        ])
-
+        .insert([{ id: authData.user.id, email, role, full_name: fullName, created_at: new Date().toISOString() }])
       if (roleError) throw roleError
 
       return { success: true, data: authData }
@@ -142,11 +123,10 @@ export const authService = {
   // Obtener todos los usuarios (solo admin)
   async getAllUsers() {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await requireClient()
         .from('users_roles')
         .select('*')
         .order('created_at', { ascending: false })
-
       if (error) throw error
       return { success: true, data }
     } catch (error) {
@@ -157,11 +137,10 @@ export const authService = {
   // Actualizar rol de usuario
   async updateUserRole(userId, newRole) {
     try {
-      const { error } = await supabase
+      const { error } = await requireClient()
         .from('users_roles')
         .update({ role: newRole })
         .eq('id', userId)
-
       if (error) throw error
       return { success: true }
     } catch (error) {
@@ -172,13 +151,11 @@ export const authService = {
   // Eliminar usuario
   async deleteUser(userId) {
     try {
-      const { error: deleteRoleError } = await supabase
+      const { error: deleteRoleError } = await requireClient()
         .from('users_roles')
         .delete()
         .eq('id', userId)
-
       if (deleteRoleError) throw deleteRoleError
-
       return { success: true }
     } catch (error) {
       return { success: false, error: error.message }
@@ -188,11 +165,10 @@ export const authService = {
   // Obtener límites de alerta
   async getAlertLimits(userId) {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await requireClient()
         .from('alert_limits')
         .select('*')
         .eq('user_id', userId)
-
       if (error) throw error
       return { success: true, data }
     } catch (error) {
@@ -203,20 +179,17 @@ export const authService = {
   // Actualizar límites de alerta
   async updateAlertLimits(userId, limits) {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await requireClient()
         .from('alert_limits')
-        .upsert([
-          {
-            user_id: userId,
-            ph_min: limits.ph_min,
-            ph_max: limits.ph_max,
-            temp_min: limits.temp_min,
-            temp_max: limits.temp_max,
-            turbidity_max: limits.turbidity_max,
-            updated_at: new Date().toISOString(),
-          },
-        ])
-
+        .upsert([{
+          user_id: userId,
+          ph_min: limits.ph_min,
+          ph_max: limits.ph_max,
+          temp_min: limits.temp_min,
+          temp_max: limits.temp_max,
+          turbidity_max: limits.turbidity_max,
+          updated_at: new Date().toISOString(),
+        }])
       if (error) throw error
       return { success: true, data }
     } catch (error) {

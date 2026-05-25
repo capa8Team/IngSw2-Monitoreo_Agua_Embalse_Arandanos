@@ -1,0 +1,230 @@
+import logging
+from datetime import datetime, timezone
+from typing import Optional
+from zoneinfo import ZoneInfo
+
+from pymongo import MongoClient
+from pymongo.errors import ConnectionFailure
+
+from core.config import settings
+from core.log_service import log_service
+from core.log_origins import LogLevel, LogOrigin
+from models import (
+    SensorMongoPayload, SensorMeasurements, SensorReading, 
+    SensorPhPostReading, DashboardResponse, Metadata, SensorData
+)
+
+logger = logging.getLogger(__name__)
+
+CHILE_TZ = ZoneInfo("America/Santiago")
+
+# ============================================================================
+# ESTADO GLOBAL Y MEMORIA
+# ============================================================================
+dashboard_state: Optional[DashboardResponse] = None
+simulated_data_store: list[dict] = []
+
+# ============================================================================
+# UTILIDADES DE TIEMPO
+# ============================================================================
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+def chile_now() -> datetime:
+    return utc_now().astimezone(CHILE_TZ)
+
+def to_chile_time(value: datetime | None) -> datetime:
+    if not isinstance(value, datetime):
+        return chile_now()
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(CHILE_TZ)
+
+def epoch_to_utc_datetime(epoch: int) -> datetime:
+    seconds = epoch / 1000 if epoch > 10_000_000_000 else epoch
+    return datetime.fromtimestamp(seconds, tz=timezone.utc)
+
+# ============================================================================
+# CONEXIÓN MONGODB
+# ============================================================================
+db = None
+
+try:
+    mongo_client = MongoClient(
+        settings.MONGODB_URL,
+        serverSelectionTimeoutMS=5000,
+        connectTimeoutMS=5000,
+        socketTimeoutMS=5000,
+    )
+    mongo_client.admin.command('ping')
+    db = mongo_client[settings.MONGODB_DB]
+    logger.info("Conexion a MongoDB establecida")
+    log_service.log_db(
+        LogLevel.INFO, "Conexión a MongoDB establecida",
+        component="mongo.client", operation="connect", query_type="read",
+        table_name="sensor_readings",
+    )
+except Exception as e:
+    logger.warning(f"No se pudo conectar a MongoDB con SSL verificado: {e}")
+    try:
+        mongo_client = MongoClient(
+            settings.MONGODB_URL,
+            serverSelectionTimeoutMS=5000,
+            connectTimeoutMS=5000,
+            socketTimeoutMS=5000,
+            tlsAllowInvalidCertificates=True,
+            tlsAllowInvalidHostnames=True,
+        )
+        mongo_client.admin.command('ping')
+        db = mongo_client[settings.MONGODB_DB]
+        logger.info("Conexión a MongoDB establecida (con SSL deshabilitado)")
+        log_service.log_db(
+            LogLevel.WARN, "MongoDB conectado sin verificación SSL",
+            component="mongo.client", operation="connect", query_type="read",
+        )
+    except Exception as e2:
+        logger.error(f"MongoDB no disponible. Fallback a memoria. Error: {e2}")
+        log_service.log_db(
+            LogLevel.FATAL, f"MongoDB no disponible: {e2}",
+            component="mongo.client", operation="connect", query_type="read",
+            details={"error_type": type(e2).__name__},
+        )
+        db = None
+
+# ============================================================================
+# LÓGICA DE NEGOCIO Y BASE DE DATOS
+# ============================================================================
+def _resolve_sensor_timestamp(timestamp: int | None) -> tuple[datetime, int | None]:
+    if timestamp is None:
+        return utc_now(), None
+    if timestamp >= 1_500_000_000:
+        return epoch_to_utc_datetime(timestamp), None
+    return utc_now(), timestamp
+
+def save_sensor_payload_to_mongodb(payload: SensorMongoPayload) -> Optional[str]:
+    if db is None:
+        logger.warning("MongoDB no está disponible")
+        return None
+    try:
+        collection = db["sensor_readings"]
+        sensor_timestamp, sensor_uptime = _resolve_sensor_timestamp(payload.timestamp)
+        document = {
+            "arduino_id": payload.arduino_id,
+            "timestamp": sensor_timestamp,
+            "mediciones": payload.mediciones.model_dump(),
+            "bateria": payload.bateria,
+        }
+        if sensor_uptime is not None:
+            document["sensor_uptime_seconds"] = sensor_uptime
+
+        result = collection.insert_one(document)
+        logger.info(f"Lectura guardada en MongoDB con ID: {result.inserted_id}")
+        return str(result.inserted_id)
+    except Exception as e:
+        logger.error(f"Error guardando en MongoDB: {e}")
+        return None
+
+def save_sensor_reading_to_mongodb(reading: SensorReading, arduino_id: str = "esp8266_1", bateria: int = 100) -> Optional[str]:
+    payload = SensorMongoPayload(
+        arduino_id=arduino_id,
+        timestamp=reading.timestamp,
+        mediciones=SensorMeasurements(
+            ph=reading.ph, temperatura=reading.temperature, conductividad=reading.conductivity,
+        ),
+        bateria=bateria,
+    )
+    return save_sensor_payload_to_mongodb(payload)
+
+def normalize_sensor_document(reading: dict) -> dict:
+    mediciones = reading.get("mediciones", {})
+    return {
+        "id": str(reading.get("_id", reading.get("id", ""))),
+        "arduino_id": reading.get("arduino_id", reading.get("sensor_id", "esp8266_1")),
+        "ph": float(mediciones.get("ph", reading.get("ph", 0.0))),
+        "temperature": float(mediciones.get("temperatura", reading.get("temperature", 0.0))),
+        "conductivity": float(mediciones.get("conductividad", reading.get("conductivity", 0.0))),
+        "bateria": int(reading.get("bateria", 100)),
+        "timestamp": to_chile_time(reading.get("timestamp", utc_now())),
+    }
+
+def get_latest_sensor_reading() -> Optional[dict]:
+    if db is not None:
+        try:
+            reading = db["sensor_readings"].find_one(sort=[("_id", -1)])
+            if reading:
+                return normalize_sensor_document(reading)
+        except Exception as e:
+            logger.error(f"Error leyendo de MongoDB: {e}")
+    
+    if simulated_data_store:
+        return normalize_sensor_document(simulated_data_store[-1])
+    return None
+
+def get_sensor_readings_history(limit: int = 100) -> list[dict]:
+    if db is not None:
+        try:
+            readings = list(db["sensor_readings"].find().sort("_id", -1).limit(limit))
+            return [normalize_sensor_document(reading) for reading in readings]
+        except Exception as e:
+            logger.error(f"Error leyendo historial de MongoDB: {e}")
+    
+    if simulated_data_store:
+        readings = simulated_data_store[-limit:][::-1]
+        return [normalize_sensor_document(reading) for reading in readings]
+    return []
+
+def update_dashboard_state_from_mongodb() -> Optional[DashboardResponse]:
+    global dashboard_state
+    reading = get_latest_sensor_reading()
+    if not reading:
+        dashboard_state = None
+        return None
+
+    now = chile_now()
+
+    def get_status(value: float, min_val: float, max_val: float, safe_max: float) -> str:
+        if value < min_val or value > max_val: return "critical"
+        if value > safe_max: return "warning"
+        return "stable"
+
+    last_updated = to_chile_time(reading.get("timestamp"))
+    time_since_reading = max(0.0, (now - last_updated).total_seconds())
+    connected = time_since_reading <= 30
+
+    dashboard_state = DashboardResponse(
+        ph=SensorData(
+            value=reading["ph"], min=6.0, max=8.5, safeMax=8.0,
+            lastUpdated=last_updated, status=get_status(reading["ph"], 6.0, 8.5, 8.0)
+        ),
+        temperature=SensorData(
+            value=reading["temperature"], min=5, max=35, safeMax=28,
+            lastUpdated=last_updated, status=get_status(reading["temperature"], 5, 35, 28)
+        ),
+        conductivity=SensorData(
+            value=reading["conductivity"], min=100, max=2000, safeMax=1500,
+            lastUpdated=last_updated, status=get_status(reading["conductivity"], 100, 2000, 1500)
+        ),
+        metadata=Metadata(
+            systemStatus="operational" if connected else "degraded",
+            arduinoConnected=connected,
+            lastSync=now,
+            uptime=max(0, int(time_since_reading)),
+            activeSensors=3 if connected else 0,
+        ),
+        battery=reading.get("bateria", 100),
+    )
+    return dashboard_state
+
+def build_payload_from_ph_post(reading: SensorPhPostReading) -> SensorMongoPayload:
+    latest = get_latest_sensor_reading() or {}
+    temperature = float(reading.temperature) if reading.temperature is not None else float(latest.get("temperature", 0.0))
+    conductivity = float(reading.conductivity) if reading.conductivity is not None else float(latest.get("conductivity", 0.0))
+
+    return SensorMongoPayload(
+        arduino_id=f"{reading.sensor_id}-{reading.id_env}",
+        timestamp=reading.timestamp,
+        mediciones=SensorMeasurements(
+            ph=float(reading.ph), temperatura=temperature, conductividad=conductivity,
+        ),
+        bateria=reading.bateria,
+    )

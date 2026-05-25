@@ -67,9 +67,12 @@ IngSw2-Monitoreo_Agua_Embalse_Arandanos/
 │
 └── 📋 RAÍZ
     ├── backend_fastapi/                (existente)
-    ├── CodigosDeArduino/               (existente)
-    ├── documentos/                     (existente)
-    ├── alertas/                        (existente)
+    ├── firmware/                       (firmware Arduino/ESP32)
+    ├── database/                       (scripts SQL - Supabase)
+    ├── scripts/                        (build/deploy scripts)
+    ├── tests/                          (todos los tests)
+    ├── documentos/                     (entregables académicos)
+    ├── alertas/                        (servicio Telegram standalone)
     ├── docker-compose.yml              (existente)
     ├── Dockerfile.frontend             (existente)
     ├── index.html                      (existente)

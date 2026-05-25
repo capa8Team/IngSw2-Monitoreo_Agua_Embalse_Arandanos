@@ -348,31 +348,6 @@ export async function deleteUserFromSupabase(userId) {
 }
 
 /**
- * Obtener usuarios con un rol específico
- * @param {string} role - 'admin' o 'employee'
- * @returns {Promise<Array>}
- */
-export async function getUsersByRole(role) {
-  try {
-    const { data, error } = await supabase
-      .from('users_roles')
-      .select('*')
-      .eq('role', role)
-      .order('created_at', { ascending: false })
-
-    if (error) {
-      console.error('Error fetching users by role:', error)
-      return []
-    }
-
-    return data || []
-  } catch (error) {
-    console.error('Exception in getUsersByRole:', error)
-    return []
-  }
-}
-
-/**
  * Obtener usuario actual desde auth
  * @returns {Promise<Object|null>}
  */
@@ -420,79 +395,6 @@ export async function getCurrentUser() {
 }
 
 /**
- * Guardar o actualizar límites de alerta para un sensor
- * @param {string} adminId - ID del usuario admin
- * @param {string} sensorType - 'ph', 'temperature', 'conductivity'
- * @param {number} minValue 
- * @param {number} maxValue 
- * @param {number} safeMaxValue 
- * @returns {Promise<{success: boolean, error?: string, data?: Object}>}
- */
-export async function saveAlertLimits(adminId, sensorType, minValue, maxValue, safeMaxValue) {
-  try {
-    const { data, error } = await supabase
-      .from('alert_limits')
-      .upsert({
-        admin_id: adminId,
-        sensor_type: sensorType,
-        min_value: minValue,
-        max_value: maxValue,
-        safe_max: safeMaxValue,
-        updated_at: new Date().toISOString()
-      }, {
-        onConflict: 'admin_id,sensor_type'
-      })
-      .select()
-
-    if (error) {
-      console.error('Error saving alert limits:', error)
-      return {
-        success: false,
-        error: error.message
-      }
-    }
-
-    return {
-      success: true,
-      data: data ? data[0] : null
-    }
-  } catch (error) {
-    console.error('Exception in saveAlertLimits:', error)
-    return {
-      success: false,
-      error: error.message
-    }
-  }
-}
-
-/**
- * Obtener límites de alerta para un sensor específico por admin
- * @param {string} adminId - ID del usuario admin
- * @param {string} sensorType - 'ph', 'temperature', 'conductivity'
- * @returns {Promise<Object|null>}
- */
-export async function getAlertLimitsBySensorAndAdmin(adminId, sensorType) {
-  try {
-    const { data, error } = await supabase
-      .from('alert_limits')
-      .select('*')
-      .eq('admin_id', adminId)
-      .eq('sensor_type', sensorType)
-      .single()
-
-    if (error && error.code !== 'PGRST116') { // PGRST116 = no rows found
-      console.error('Error fetching alert limits:', error)
-      return null
-    }
-
-    return data || null
-  } catch (error) {
-    console.error('Exception in getAlertLimitsBySensorAndAdmin:', error)
-    return null
-  }
-}
-
-/**
  * Obtener todos los límites de alerta para un admin
  * @param {string} adminId - ID del usuario admin
  * @returns {Promise<Array>}
@@ -517,61 +419,6 @@ export async function getAlertLimitsByAdmin(adminId) {
   }
 }
 
-/**
- * Obtener límites de alerta para un tipo de sensor (todos los admins)
- * @param {string} sensorType - 'ph', 'temperature', 'conductivity'
- * @returns {Promise<Array>}
- */
-export async function getAlertLimitsBySensor(sensorType) {
-  try {
-    const { data, error } = await supabase
-      .from('alert_limits')
-      .select('*')
-      .eq('sensor_type', sensorType)
-      .order('updated_at', { ascending: false })
-
-    if (error) {
-      console.error('Error fetching alert limits for sensor:', error)
-      return []
-    }
-
-    return data || []
-  } catch (error) {
-    console.error('Exception in getAlertLimitsBySensor:', error)
-    return []
-  }
-}
-
-/**
- * Eliminar límites de alerta
- * @param {string} id - ID del registro de alert_limits
- * @returns {Promise<{success: boolean, error?: string}>}
- */
-export async function deleteAlertLimit(id) {
-  try {
-    const { error } = await supabase
-      .from('alert_limits')
-      .delete()
-      .eq('id', id)
-
-    if (error) {
-      console.error('Error deleting alert limit:', error)
-      return {
-        success: false,
-        error: error.message
-      }
-    }
-
-    return { success: true }
-  } catch (error) {
-    console.error('Exception in deleteAlertLimit:', error)
-    return {
-      success: false,
-      error: error.message
-    }
-  }
-}
-
 export default {
   createUserInSupabase,
   getAllUsers,
@@ -579,11 +426,6 @@ export default {
   getUserById,
   updateUserRole,
   deleteUserFromSupabase,
-  getUsersByRole,
   getCurrentUser,
-  saveAlertLimits,
-  getAlertLimitsBySensorAndAdmin,
   getAlertLimitsByAdmin,
-  getAlertLimitsBySensor,
-  deleteAlertLimit
 }

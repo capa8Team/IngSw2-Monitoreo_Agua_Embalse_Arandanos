@@ -5,17 +5,13 @@
 <script setup>
 import { onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuthStore } from './stores/authStore'
 import { hasValidSessionToken, startSessionIdleWatcher, stopSessionIdleWatcher } from './services/sessionAuth.js'
 import { initTheme } from './services/themePreference.js'
 
-const authStore = useAuthStore()
 const router = useRouter()
 
-onMounted(async () => {
+onMounted(() => {
   initTheme()
-  await authStore.initializeAuth()
-  authStore.subscribeToAuthChanges()
   if (hasValidSessionToken()) {
     startSessionIdleWatcher(router)
   }

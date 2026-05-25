@@ -113,7 +113,6 @@ class TelegramService:
     application: Optional[Application] = None
 
     @classmethod
-    @classmethod
     async def initialize(cls) -> bool:
         """Inicializar el bot y la aplicación."""
         try:

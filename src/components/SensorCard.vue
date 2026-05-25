@@ -6,34 +6,32 @@
         {{ statusText }}
       </span>
     </div>
-    
-    <div class="gauge-wrapper">
-      <LinearGauge
-        :sensor-name="sensorName"
-        :value="value"
-        :min-value="min"
-        :max-value="max"
-        :unit="unit"
-        :width="450"
-        :height="150"
-        :major-ticks="majorTicks"
-        :minor-ticks="5"
-        :highlights="gaugeHighlights"
-        v-bind="linearGaugeThemeProps"
-      />
+
+    <div class="sensor-display" :class="`status-bg-${statusClass}`">
+      <div class="sensor-value">
+        <span class="value-number">{{ value.toFixed(1) }}</span>
+        <span class="value-unit">{{ unit }}</span>
+      </div>
     </div>
 
     <div class="sensor-info">
       <div class="info-row">
-        <span class="info-label">Rango verde:</span>
-        <span class="info-value">{{ normalizedThresholds.warningLow.toFixed(1) }} - {{ normalizedThresholds.warningHigh.toFixed(1) }} {{ unit }}</span>
+        <span class="info-label">🔴 Zona roja:</span>
+        <span class="info-value">
+          {{ normalizedThresholds.dangerMin.toFixed(1) }} - {{ normalizedThresholds.dangerMax.toFixed(1) }}
+          / {{ normalizedThresholds.dangerMinSup.toFixed(1) }} - {{ normalizedThresholds.dangerMaxSup.toFixed(1) }} {{ unit }}
+        </span>
       </div>
       <div class="info-row">
-        <span class="info-label">Zona amarilla:</span>
+        <span class="info-label">🟠 Zona amarilla:</span>
         <span class="info-value">
-          {{ normalizedThresholds.dangerLow.toFixed(1) }} - {{ normalizedThresholds.warningLow.toFixed(1) }}
-          / {{ normalizedThresholds.warningHigh.toFixed(1) }} - {{ normalizedThresholds.dangerHigh.toFixed(1) }} {{ unit }}
+          {{ normalizedThresholds.warningMin.toFixed(1) }} - {{ normalizedThresholds.warningMax.toFixed(1) }}
+          / {{ normalizedThresholds.warningMinSup.toFixed(1) }} - {{ normalizedThresholds.warningMaxSup.toFixed(1) }} {{ unit }}
         </span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">🟢 Rango verde:</span>
+        <span class="info-value">{{ normalizedThresholds.safeMin.toFixed(1) }} - {{ normalizedThresholds.safeMax.toFixed(1) }} {{ unit }}</span>
       </div>
       <div class="info-row">
         <span class="info-label">Última actualización:</span>
@@ -44,36 +42,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
-
-const gaugeIsDark = ref(false)
-
-function syncGaugeTheme() {
-  gaugeIsDark.value = document.documentElement.getAttribute('data-theme') === 'dark'
-}
-
-onMounted(() => {
-  syncGaugeTheme()
-  window.addEventListener('embalse-theme-change', syncGaugeTheme)
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('embalse-theme-change', syncGaugeTheme)
-})
-
-const linearGaugeThemeProps = computed(() => {
-  if (!gaugeIsDark.value) return {}
-  return {
-    colorMajorTicks: '#94a3b8',
-    colorMinorTicks: '#64748b',
-    colorNumbers: '#e2e8f0',
-    colorUnits: '#cbd5e1',
-    colorPlate: '#1e293b',
-    colorPlateEnd: '#0f172a',
-    colorNeedle: '#fcd34d',
-  }
-})
-import LinearGauge from './LinearGauge.vue'
+import { computed } from 'vue'
 
 const props = defineProps({
   sensorName: {
@@ -116,78 +85,58 @@ const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
 const buildFallbackThresholds = () => {
   const range = props.max - props.min
   return {
-    dangerLow: props.min + range * 0.15,
-    warningLow: props.min + range * 0.35,
-    warningHigh: props.min + range * 0.65,
-    dangerHigh: props.min + range * 0.85
+    dangerMin: props.min,
+    dangerMax: props.min + range * 0.15,
+    warningMin: props.min + range * 0.15,
+    warningMax: props.min + range * 0.35,
+    safeMin: props.min + range * 0.35,
+    safeMax: props.min + range * 0.65,
+    warningMinSup: props.min + range * 0.65,
+    warningMaxSup: props.min + range * 0.85,
+    dangerMinSup: props.min + range * 0.85,
+    dangerMaxSup: props.max
   }
 }
 
 const normalizedThresholds = computed(() => {
   const fallback = buildFallbackThresholds()
 
-  const values = [
-    Number(props.thresholds?.dangerLow ?? fallback.dangerLow),
-    Number(props.thresholds?.warningLow ?? fallback.warningLow),
-    Number(props.thresholds?.warningHigh ?? fallback.warningHigh),
-    Number(props.thresholds?.dangerHigh ?? fallback.dangerHigh)
-  ]
-    .map((value) => Number.isFinite(value) ? clamp(value, props.min, props.max) : props.min)
-    .sort((first, second) => first - second)
-
-  return {
-    dangerLow: values[0],
-    warningLow: values[1],
-    warningHigh: values[2],
-    dangerHigh: values[3]
+  const values = {
+    dangerMin: Number(props.thresholds?.dangerMin ?? fallback.dangerMin),
+    dangerMax: Number(props.thresholds?.dangerMax ?? fallback.dangerMax),
+    warningMin: Number(props.thresholds?.warningMin ?? fallback.warningMin),
+    warningMax: Number(props.thresholds?.warningMax ?? fallback.warningMax),
+    safeMin: Number(props.thresholds?.safeMin ?? fallback.safeMin),
+    safeMax: Number(props.thresholds?.safeMax ?? fallback.safeMax),
+    warningMinSup: Number(props.thresholds?.warningMinSup ?? fallback.warningMinSup),
+    warningMaxSup: Number(props.thresholds?.warningMaxSup ?? fallback.warningMaxSup),
+    dangerMinSup: Number(props.thresholds?.dangerMinSup ?? fallback.dangerMinSup),
+    dangerMaxSup: Number(props.thresholds?.dangerMaxSup ?? fallback.dangerMaxSup)
   }
+
+  Object.keys(values).forEach((key) => {
+    values[key] = Number.isFinite(values[key]) ? clamp(values[key], props.min, props.max) : props.min
+  })
+
+  return values
 })
 
 const statusClass = computed(() => {
   const currentValue = clamp(props.value, props.min, props.max)
-  if (currentValue <= normalizedThresholds.value.dangerLow || currentValue >= normalizedThresholds.value.dangerHigh) return 'danger'
-  if (currentValue <= normalizedThresholds.value.warningLow || currentValue >= normalizedThresholds.value.warningHigh) return 'warning'
+  const t = normalizedThresholds.value
+
+  if (currentValue <= t.dangerMax || currentValue >= t.dangerMinSup) return 'danger'
+  if (currentValue <= t.warningMax || currentValue >= t.warningMinSup) return 'warning'
   return 'safe'
 })
 
 const statusText = computed(() => {
   const currentValue = clamp(props.value, props.min, props.max)
-  if (currentValue <= normalizedThresholds.value.dangerLow || currentValue >= normalizedThresholds.value.dangerHigh) return 'Peligroso'
-  if (currentValue <= normalizedThresholds.value.warningLow || currentValue >= normalizedThresholds.value.warningHigh) return 'Advertencia'
+  const t = normalizedThresholds.value
+
+  if (currentValue <= t.dangerMax || currentValue >= t.dangerMinSup) return 'Peligroso'
+  if (currentValue <= t.warningMax || currentValue >= t.warningMinSup) return 'Advertencia'
   return 'Estable'
-})
-
-const majorTicks = computed(() => {
-  const range = props.max - props.min
-  const step = range / 10
-  const ticks = []
-  for (let i = 0; i <= 10; i++) {
-    ticks.push(parseFloat((props.min + i * step).toFixed(2)))
-  }
-  return ticks
-})
-
-const gaugeHighlights = computed(() => {
-  const thresholds = normalizedThresholds.value
-
-  // Para temperatura: azul en extremo frío, para pH y conductividad: rojo en ambos extremos
-  if (props.sensorType === 'temperature') {
-    return [
-      { from: props.min, to: thresholds.dangerLow, color: 'rgba(0, 0, 255, 0.25)' },
-      { from: thresholds.dangerLow, to: thresholds.warningLow, color: 'rgba(255, 193, 7, 0.25)' },
-      { from: thresholds.warningLow, to: thresholds.warningHigh, color: 'rgba(76, 175, 80, 0.25)' },
-      { from: thresholds.warningHigh, to: thresholds.dangerHigh, color: 'rgba(255, 193, 7, 0.25)' },
-      { from: thresholds.dangerHigh, to: props.max, color: 'rgba(255, 0, 0, 0.25)' }
-    ]
-  } else {
-    return [
-      { from: props.min, to: thresholds.dangerLow, color: 'rgba(255, 0, 0, 0.25)' },
-      { from: thresholds.dangerLow, to: thresholds.warningLow, color: 'rgba(255, 193, 7, 0.25)' },
-      { from: thresholds.warningLow, to: thresholds.warningHigh, color: 'rgba(76, 175, 80, 0.25)' },
-      { from: thresholds.warningHigh, to: thresholds.dangerHigh, color: 'rgba(255, 193, 7, 0.25)' },
-      { from: thresholds.dangerHigh, to: props.max, color: 'rgba(255, 0, 0, 0.25)' }
-    ]
-  }
 })
 </script>
 
@@ -199,6 +148,9 @@ const gaugeHighlights = computed(() => {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   border: 1px solid #e8e8e8;
   transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .sensor-card:hover {
@@ -210,8 +162,7 @@ const gaugeHighlights = computed(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
-  padding-bottom: 16px;
+  padding-bottom: 12px;
   border-bottom: 1px solid #f0f0f0;
 }
 
@@ -246,15 +197,52 @@ const gaugeHighlights = computed(() => {
   color: #c62828;
 }
 
-.gauge-wrapper {
+.sensor-display {
   display: flex;
   justify-content: center;
-  margin: 24px 0;
+  align-items: center;
+  min-height: 140px;
+  border-radius: 8px;
+  padding: 20px;
+  transition: all 0.3s ease;
+}
+
+.status-bg-safe {
+  background-color: rgba(76, 175, 80, 0.9);
+}
+
+.status-bg-warning {
+  background-color: rgba(255, 193, 7, 0.9);
+}
+
+.status-bg-danger {
+  background-color: rgba(244, 67, 54, 0.9);
+}
+
+.sensor-value {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+}
+
+.value-number {
+  font-size: 56px;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.value-unit {
+  font-size: 18px;
+  font-weight: 500;
+  color: #ffffff;
+  opacity: 0.95;
 }
 
 .sensor-info {
-  margin-top: 20px;
-  padding-top: 16px;
+  padding-top: 12px;
   border-top: 1px solid #f0f0f0;
 }
 
@@ -262,7 +250,7 @@ const gaugeHighlights = computed(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   font-size: 13px;
 }
 
@@ -289,8 +277,34 @@ const gaugeHighlights = computed(() => {
     font-size: 16px;
   }
 
-  .sensor-header {
-    margin-bottom: 16px;
+  .value-number {
+    font-size: 40px;
+  }
+
+  .value-unit {
+    font-size: 14px;
+  }
+
+  .sensor-display {
+    min-height: 100px;
+  }
+}
+
+@media (max-width: 480px) {
+  .sensor-card {
+    padding: 12px;
+  }
+
+  .value-number {
+    font-size: 32px;
+  }
+
+  .value-unit {
+    font-size: 12px;
+  }
+
+  .sensor-display {
+    min-height: 80px;
   }
 }
 </style>

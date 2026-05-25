@@ -24,6 +24,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Ejecutar siempre desde la raiz del proyecto sin importar desde donde se llame
+Set-Location (Join-Path $PSScriptRoot "..")
+
 # --- Leer .env local si las variables estan vacias ----------------------------
 if ((-not $ViteSupabaseUrl) -or (-not $ViteSupabaseAnonKey)) {
     if (Test-Path ".env") {
@@ -89,6 +92,6 @@ Write-Host "  Imagen pusheada exitosamente!" -ForegroundColor Green
 Write-Host "  $IMAGE" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "  Siguiente paso:" -ForegroundColor Cyan
-Write-Host "  En Dokploy usa docker-compose.dokploy.prebuilt.yml" -ForegroundColor Cyan
+Write-Host "  En Dokploy usa deploy/docker-compose.dokploy.prebuilt.yml" -ForegroundColor Cyan
 Write-Host "  y setea FRONTEND_IMAGE=$IMAGE" -ForegroundColor Cyan
 Write-Host "=============================================" -ForegroundColor Green

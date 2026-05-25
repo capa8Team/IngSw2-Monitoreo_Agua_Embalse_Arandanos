@@ -18,7 +18,7 @@ Rama: **`implementacionLogs`** · Repositorio: [capa8Team/IngSw2-Monitoreo_Agua_
 
 ## 2. Tablas Supabase
 
-Script: [`docs/supabase_logs_schema.sql`](./supabase_logs_schema.sql)
+Script: [`database/supabase/supabase_logs_schema.sql`](../database/supabase/supabase_logs_schema.sql)
 
 | Origen | Tabla |
 |--------|-------|
@@ -56,7 +56,7 @@ LOG_DIR=logs
 APP_ENV=development
 ```
 
-1. **Supabase:** ejecutar `docs/supabase_logs_schema.sql` solo si las tablas **aún no existen** (ver §4.1).
+1. **Supabase:** ejecutar `database/supabase/supabase_logs_schema.sql` solo si las tablas **aún no existen** (ver §4.1).
 2. Arrancar stack: `docker compose up --build` desde la raíz del repo.
 
 ### 4.1 Ya ejecuté los scripts en el SQL Editor
@@ -75,7 +75,7 @@ WHERE table_schema = 'public' AND table_name LIKE '%_logs'
 ORDER BY table_name;
 ```
 
-Si falta alguna tabla, ejecuta únicamente el `CREATE TABLE` de esa tabla desde `docs/supabase_logs_schema.sql`, no el archivo entero otra vez.
+Si falta alguna tabla, ejecuta únicamente el `CREATE TABLE` de esa tabla desde `database/supabase/supabase_logs_schema.sql`, no el archivo entero otra vez.
 
 ---
 
@@ -157,7 +157,7 @@ LIMIT 20;
 
 ```bash
 pip install pytest sqlalchemy psycopg2-binary
-pytest testIniciales/test_log_service.py -v
+pytest tests/test_log_service.py -v
 ```
 
 ### 5.8 Frontend

@@ -2,6 +2,8 @@
  * Servicio para enviar alertas al backend cuando sensores estén fuera de rango
  */
 
+import { getAlertLevel } from '../utils/sensorUtils.js'
+
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 const DATA_MODE = String(import.meta.env.VITE_DATA_MODE ?? 'real').trim().toLowerCase()
 const IS_SIMULATED_MODE = DATA_MODE === 'simulated'
@@ -53,21 +55,6 @@ export const checkAndSendAlerts = async (device, sensorLimits) => {
   const ph = device.sensors.ph
   const temperature = device.sensors.temperature
   const conductivity = device.sensors.conductivity
-
-  // Función auxiliar para determinar el nivel de riesgo
-  const getAlertLevel = (value, limits) => {
-    const { danger_min, danger_max, warning_min, warning_max, safe_min, safe_max } = limits
-    
-    if (value >= safe_min && value <= safe_max) {
-      return 'safe'
-    } else if (value >= warning_min && value <= warning_max) {
-      return 'warning'
-    } else if (value >= danger_min && value <= danger_max) {
-      return 'danger'
-    } else {
-      return 'danger' // Completamente fuera
-    }
-  }
 
   // Verificar pH
   const phLevel = getAlertLevel(ph, sensorLimits.ph)

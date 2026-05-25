@@ -24,6 +24,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Ejecutar siempre desde la raiz del proyecto sin importar desde donde se llame
+Set-Location (Join-Path $PSScriptRoot "..")
+
 # --- Leer .env local si las variables estan vacias ----------------------------
 if ((-not $ViteSupabaseUrl) -or (-not $ViteSupabaseAnonKey)) {
     if (Test-Path ".env") {
@@ -114,5 +117,5 @@ Write-Host "    BACKEND_IMAGE=$BACKEND_IMAGE" -ForegroundColor White
 Write-Host "    MONGODB_URL=<tu-url-mongodb-atlas>" -ForegroundColor White
 Write-Host "    JWT_SECRET=<secreto-largo>" -ForegroundColor White
 Write-Host ""
-Write-Host "  Compose file a usar: docker-compose.dokploy.prebuilt.yml" -ForegroundColor Cyan
+Write-Host "  Compose file a usar: deploy/docker-compose.dokploy.prebuilt.yml" -ForegroundColor Cyan
 Write-Host "=============================================" -ForegroundColor Green
