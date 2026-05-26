@@ -25,8 +25,6 @@ def insert_sample_data():
             serverSelectionTimeoutMS=10000,
             connectTimeoutMS=10000,
             socketTimeoutMS=10000,
-            tlsAllowInvalidCertificates=True,
-            tlsAllowInvalidHostnames=True,
         )
         
         # Verificar conexión

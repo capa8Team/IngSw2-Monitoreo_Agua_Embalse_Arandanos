@@ -19,6 +19,7 @@ from routers.dashboard import router as dashboard_router
 from routers.telegram import router as telegram_router
 from routers.diagnostics import router as diagnostics_router
 from services.telegram import initialize_telegram, TelegramService
+from services.aws_iot import aws_iot_service
 from routers.logs_router import router as logs_router
 from routers.auth_jwt import router as auth_jwt_router
 
@@ -77,6 +78,12 @@ async def startup_event():
     setup_fallback_logging()
     log_service.log(LogOrigin.DASHBOARD, LogLevel.INFO, "Iniciando API", component="system.startup")
     
+    # Suscriptor AWS IoT Core (MQTT → MongoDB)
+    try:
+        aws_iot_service.start()
+    except Exception as e:
+        logger.error("[AWS_IOT] Error al iniciar suscriptor: %s", e)
+
     # Inicializar bot en background
     try:
         if await initialize_telegram():
@@ -87,6 +94,7 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("[STOP] Aplicacion deteniendo...")
+    aws_iot_service.stop()
 
 # Endpoints Base de Salud
 @app.get("/", tags=["Health"])

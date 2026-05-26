@@ -114,7 +114,7 @@ Write-Host ""
 Write-Host "  En Dokploy > Environment Variables agregar:" -ForegroundColor Cyan
 Write-Host "    FRONTEND_IMAGE=$FRONTEND_IMAGE" -ForegroundColor White
 Write-Host "    BACKEND_IMAGE=$BACKEND_IMAGE" -ForegroundColor White
-Write-Host "    MONGODB_URL=<tu-url-mongodb-atlas>" -ForegroundColor White
+Write-Host "    MONGO_ROOT_PASSWORD=<password-seguro>" -ForegroundColor White
 Write-Host "    JWT_SECRET=<secreto-largo>" -ForegroundColor White
 Write-Host ""
 Write-Host "  Compose file a usar: deploy/docker-compose.dokploy.prebuilt.yml" -ForegroundColor Cyan

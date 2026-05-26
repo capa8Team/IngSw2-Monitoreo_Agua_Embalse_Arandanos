@@ -49,7 +49,7 @@ services:
     environment:
       MONGODB_URL: mongodb://${MONGO_INITDB_ROOT_USERNAME:-admin}:${MONGO_ROOT_PASSWORD:-Panconpalta1}@mongodb:27017/?authSource=admin
       MONGODB_DB: ${MONGODB_DB:-Arandanos}
-      SIMULATED_DATA_ENABLED: "${SIMULATED_DATA_ENABLED:-true}"
+      SIMULATED_DATA_ENABLED: "${SIMULATED_DATA_ENABLED:-false}"
       API_HOST: 0.0.0.0
       API_PORT: 8000
       JWT_SECRET: ${JWT_SECRET:-dev-cambiar-en-produccion-embalse-arandanos}
@@ -63,6 +63,17 @@ services:
       MAILERSEND_TO_EMAILS: ${MAILERSEND_TO_EMAILS:-}
       SUPABASE_DB_URL: ${SUPABASE_DB_URL:-}
       LOG_DIR: logs
+      AWS_IOT_ENABLED: "${AWS_IOT_ENABLED:-false}"
+      AWS_IOT_PORT: ${AWS_IOT_PORT:-8883}
+      AWS_IOT_CLIENT_ID: ${AWS_IOT_CLIENT_ID:-embalse-backend}
+      AWS_IOT_ENDPOINT: ${AWS_IOT_ENDPOINT:-a319gtmfe1r2jb-ats.iot.sa-east-1.amazonaws.com}
+      AWS_IOT_TOPIC: ${AWS_IOT_TOPIC:-boya/sensores}
+      AWS_IOT_CERT_PATH: ${AWS_IOT_CERT_PATH:-/app/iot-certs/4bb52c4252bfb1b205ea09eb59a655000d689f05c3b72aa689f775caa548496e-certificate.pem.crt}
+      AWS_IOT_KEY_PATH: ${AWS_IOT_KEY_PATH:-/app/iot-certs/4bb52c4252bfb1b205ea09eb59a655000d689f05c3b72aa689f775caa548496e-private.pem.key}
+      AWS_IOT_CA_PATH: ${AWS_IOT_CA_PATH:-/app/iot-certs/AmazonRootCA1.pem}
+      AWS_IOT_DEFAULT_DEVICE_ID: ${AWS_IOT_DEFAULT_DEVICE_ID:-boya}
+    volumes:
+      - ${AWS_IOT_CERTS_DIR:-./IotCore}:/app/iot-certs:ro
     ports:
       # Dockerfile expone uvicorn en puerto 80 dentro del contenedor
       - "${BACKEND_PORT:-8000}:80"
@@ -79,7 +90,7 @@ services:
       args:
         # Vacío: URLs relativas /api → nginx → backend (recomendado en Docker).
         VITE_API_URL: "${VITE_API_URL:-}"
-        VITE_DATA_MODE: "${VITE_DATA_MODE:-simulated}"
+        VITE_DATA_MODE: "${VITE_DATA_MODE:-real}"
         VITE_SUPABASE_URL: "${VITE_SUPABASE_URL:-}"
         VITE_SUPABASE_ANON_KEY: "${VITE_SUPABASE_ANON_KEY:-}"
     container_name: frontend-arandanos
