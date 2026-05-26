@@ -32,6 +32,15 @@
 
         <button
           v-if="isAdmin"
+          class="add-device-btn"
+          @click="$emit('add-device')"
+          title="Agregar nuevo dispositivo"
+        >
+          ➕ Nuevo Dispositivo
+        </button>
+
+        <button
+          v-if="isAdmin"
           class="admin-btn"
           @click="$emit('open-user-management')"
           title="Gestión de usuarios"
@@ -104,7 +113,7 @@ const selectDevice = (device) => {
   emit('select-device', device)
 }
 
-const emit = defineEmits(['select-device', 'open-history', 'open-user-management', 'logout'])
+const emit = defineEmits(['select-device', 'open-history', 'open-user-management', 'logout', 'add-device'])
 </script>
 
 <style scoped>
@@ -150,6 +159,24 @@ const emit = defineEmits(['select-device', 'open-history', 'open-user-management
   padding: 8px;
   border-radius: 8px;
   flex-shrink: 0;
+}
+
+.add-device-btn {
+  border: 1px solid #667eea;
+  background: #ffffff;
+  color: #667eea;
+  border-radius: 6px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.add-device-btn:hover {
+  background: #f0f4ff;
+  border-color: #764ba2;
+  color: #764ba2;
 }
 
 .history-btn {
@@ -420,6 +447,18 @@ html[data-theme='dark'] .view-btn.active {
   background: #1e3a2a;
   color: #86efac;
   border-color: #66bb6a;
+}
+
+html[data-theme='dark'] .add-device-btn {
+  background: #262a36;
+  border-color: #667eea;
+  color: #a5b4fc;
+}
+
+html[data-theme='dark'] .add-device-btn:hover {
+  background: #1e2236;
+  border-color: #764ba2;
+  color: #c4b5fd;
 }
 
 html[data-theme='dark'] .admin-btn {

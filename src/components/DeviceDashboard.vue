@@ -7,6 +7,7 @@
       @open-history="openHistory"
       @open-user-management="openUserManagementView"
       @logout="handleLogout"
+      @add-device="openAddDeviceFromDeviceList"
     />
   </div>
 
@@ -586,6 +587,98 @@
       </section>
     </main>
   </div>
+
+  <!-- Sección de Gestión de Dispositivos (siempre renderizada para acceso desde cualquier vista) -->
+  <AdminDevicesSection ref="devicesSectionRef" :show-section="currentView === 'dashboard'" :trigger-open-modal="triggerOpenAddModal" />
+
+  <!-- Modal Agregar Dispositivo (simple, para evitar problemas con AdminDevicesSection) -->
+  <div v-if="showAddDeviceModal" class="modal-overlay" @click.self="showAddDeviceModal = false">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Agregar Nuevo Dispositivo</h3>
+        <button class="close-btn" @click="showAddDeviceModal = false">×</button>
+      </div>
+
+      <div class="modal-body">
+        <form @submit.prevent="handleAddDeviceSubmit">
+          <!-- Nombre -->
+          <div class="form-group">
+            <label for="device-name">Nombre del Dispositivo *</label>
+            <input
+              id="device-name"
+              v-model.trim="addDeviceFormData.name"
+              type="text"
+              placeholder="Ej: Sensor Embalse Norte"
+              required
+              class="form-input"
+            />
+          </div>
+
+          <!-- Tipo de Dispositivo -->
+          <div class="form-group">
+            <label for="device-type">Tipo de Microcontrolador</label>
+            <select v-model="addDeviceFormData.device_type" id="device-type" class="form-select">
+              <option value="ESP8266">ESP8266 (WiFi)</option>
+              <option value="Arduino">Arduino</option>
+              <option value="STM32">STM32</option>
+              <option value="other">Otro</option>
+            </select>
+          </div>
+
+          <!-- Ubicación -->
+          <div class="form-group">
+            <label for="device-location">Ubicación (opcional)</label>
+            <input
+              id="device-location"
+              v-model.trim="addDeviceFormData.location"
+              type="text"
+              placeholder="Ej: Zona A - Profundidad 5m"
+              class="form-input"
+            />
+          </div>
+
+          <!-- Arduino ID (si aplica) -->
+          <div class="form-group">
+            <label for="arduino-id">Arduino ID (opcional)</label>
+            <input
+              id="arduino-id"
+              v-model.trim="addDeviceFormData.arduino_id"
+              type="text"
+              placeholder="Auto-detectado si se deja vacío"
+              class="form-input"
+            />
+            <small class="help-text">
+              Si tienes el ID del Arduino, colócalo aquí. De lo contrario, se asignará automáticamente.
+            </small>
+          </div>
+
+          <!-- Botones -->
+          <div class="form-actions">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              @click="showAddDeviceModal = false"
+              :disabled="isSubmittingDevice"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              class="btn btn-primary"
+              :disabled="!addDeviceFormData.name || isSubmittingDevice"
+            >
+              {{ isSubmittingDevice ? 'Guardando...' : 'Agregar Dispositivo' }}
+            </button>
+          </div>
+        </form>
+
+        <!-- Mensaje de Error -->
+        <div v-if="addDeviceError" class="alert alert-error">
+          {{ addDeviceError }}
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -595,6 +688,7 @@ import DeviceList from './DeviceList.vue'
 import ThemeToggleButton from './ThemeToggleButton.vue'
 import SensorCard from './SensorCard.vue'
 import BatteryIndicator from './BatteryIndicator.vue'
+import AdminDevicesSection from './AdminDevicesSection.vue'
 import { checkAndSendAlerts } from '../services/AlertService.js'
 import { fetchDashboardData, fetchSensorHistory, IS_SIMULATED_MODE, DATA_MODE } from '../services/ArduinoConfig.js'
 import {
@@ -694,6 +788,17 @@ let editingLimits = ref({
 const currentView = ref('devices')
 const previousView = ref(null)
 const selectedDeviceId = ref(null)
+const devicesSectionRef = ref(null)
+const triggerOpenAddModal = ref(false)
+const showAddDeviceModal = ref(false)
+const addDeviceFormData = ref({
+  name: '',
+  device_type: 'ESP8266',
+  location: '',
+  arduino_id: ''
+})
+const addDeviceError = ref('')
+const isSubmittingDevice = ref(false)
 const lastSync = ref('Sin datos del Arduino')
 const showAllTodayAlerts = ref(false)
 
@@ -1084,6 +1189,69 @@ const goBack = () => {
   } else {
     // Para otros casos, volver al home
     currentView.value = 'devices'
+  }
+}
+
+const openAddDeviceFromHeader = () => {
+  if (!isAdmin.value) return
+  // Llamar el método openAddModal del componente AdminDevicesSection
+  if (devicesSectionRef.value) {
+    devicesSectionRef.value.openAddModal()
+  }
+}
+
+const openAddDeviceFromDeviceList = () => {
+  console.log('🔘 openAddDeviceFromDeviceList called')
+  console.log('isAdmin:', isAdmin.value)
+  
+  if (!isAdmin.value) {
+    console.log('❌ Usuario no es admin')
+    return
+  }
+  
+  console.log('✅ Abriendo modal')
+  showAddDeviceModal.value = true
+}
+
+const handleAddDeviceSubmit = async () => {
+  if (!addDeviceFormData.value.name) return
+  
+  isSubmittingDevice.value = true
+  addDeviceError.value = ''
+  
+  try {
+    console.log('Enviando datos del dispositivo:', addDeviceFormData.value)
+    
+    const response = await fetch(`${API_BASE_URL}/api/devices`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
+      },
+      body: JSON.stringify({
+        name: addDeviceFormData.value.name,
+        device_type: addDeviceFormData.value.device_type,
+        location: addDeviceFormData.value.location || null,
+        arduino_id: addDeviceFormData.value.arduino_id || null
+      })
+    })
+    
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.detail || `Error ${response.status}`)
+    }
+    
+    console.log('✅ Dispositivo creado exitosamente')
+    showAddDeviceModal.value = false
+    addDeviceFormData.value = { name: '', device_type: 'ESP8266', location: '', arduino_id: '' }
+    
+    // Recargar dispositivos
+    // await deviceStore.fetchDevices(API_BASE_URL)
+  } catch (error) {
+    addDeviceError.value = `Error: ${error.message}`
+    console.error('Error al agregar dispositivo:', error)
+  } finally {
+    isSubmittingDevice.value = false
   }
 }
 
@@ -2694,5 +2862,230 @@ html[data-theme='dark'] .collapse-btn {
 
 html[data-theme='dark'] .collapse-btn:hover {
   background: #ea580c;
+}
+
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-content {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  max-width: 500px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid #e5e7eb;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 28px;
+  cursor: pointer;
+  color: white;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.close-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+  color: #374151;
+  font-size: 0.95rem;
+}
+
+.form-input,
+.form-select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-family: inherit;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.form-input:focus,
+.form-select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.help-text {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+.form-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.btn {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: #f3f4f6;
+  color: #374151;
+  border: 1px solid #d1d5db;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #e5e7eb;
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.alert {
+  padding: 12px 16px;
+  border-radius: 6px;
+  margin-top: 16px;
+  font-size: 0.95rem;
+}
+
+.alert-error {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+html[data-theme='dark'] .modal-content {
+  background: #1f2937;
+  color: #f3f4f6;
+}
+
+html[data-theme='dark'] .modal-header {
+  border-bottom-color: #374151;
+}
+
+html[data-theme='dark'] .form-group label {
+  color: #e5e7eb;
+}
+
+html[data-theme='dark'] .form-input,
+html[data-theme='dark'] .form-select {
+  background: #111827;
+  color: #f3f4f6;
+  border-color: #4b5563;
+}
+
+html[data-theme='dark'] .form-input:focus,
+html[data-theme='dark'] .form-select:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
+html[data-theme='dark'] .help-text {
+  color: #9ca3af;
+}
+
+html[data-theme='dark'] .btn-secondary {
+  background: #374151;
+  color: #f3f4f6;
+  border-color: #4b5563;
+}
+
+html[data-theme='dark'] .btn-secondary:hover:not(:disabled) {
+  background: #4b5563;
+}
+
+html[data-theme='dark'] .alert-error {
+  background: #7f1d1d;
+  color: #fecaca;
+  border-color: #b91c1c;
 }
 </style>

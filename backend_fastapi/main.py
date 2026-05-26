@@ -18,6 +18,7 @@ from routers.alerts import router as alerts_router
 from routers.dashboard import router as dashboard_router
 from routers.telegram import router as telegram_router
 from routers.diagnostics import router as diagnostics_router
+from routers.devices import router as devices_router
 from services.telegram import initialize_telegram, TelegramService
 from services.aws_iot import aws_iot_service
 from routers.logs_router import router as logs_router
@@ -48,6 +49,7 @@ app.include_router(auth_jwt_router, prefix="/api/auth", tags=["auth"])
 app.include_router(logs_router)
 app.include_router(sensors_router)
 app.include_router(alerts_router)
+app.include_router(devices_router)
 app.include_router(dashboard_router)
 app.include_router(telegram_router)
 app.include_router(diagnostics_router)
