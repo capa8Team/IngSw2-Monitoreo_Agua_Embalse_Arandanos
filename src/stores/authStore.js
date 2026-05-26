@@ -48,6 +48,22 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  // Registro público (Supabase Auth + trigger users_roles)
+  async function signup(email, password, fullName) {
+    isLoading.value = true
+    error.value = null
+    try {
+      const result = await authService.signup(email, password, fullName)
+      if (result.success) {
+        return { success: true }
+      }
+      error.value = result.error
+      return { success: false, error: result.error }
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   // Logout
   async function logout() {
     isLoading.value = true
@@ -69,6 +85,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   // Listener de cambios de autenticación
   function subscribeToAuthChanges() {
+    if (!supabase) return
     supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
         user.value = session.user
@@ -93,6 +110,7 @@ export const useAuthStore = defineStore('auth', () => {
     // Actions
     initializeAuth,
     login,
+    signup,
     logout,
     subscribeToAuthChanges,
   }

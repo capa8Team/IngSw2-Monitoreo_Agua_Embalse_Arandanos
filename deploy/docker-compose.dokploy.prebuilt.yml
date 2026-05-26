@@ -3,24 +3,43 @@ version: '3.8'
 # =============================================================================
 # docker-compose.dokploy.prebuilt.yml
 #
-# Usa imagenes pre-buildeadas subidas a Docker Hub.
-# No requiere acceso al repositorio Git.
+# Imágenes pre-buildeadas + MongoDB en el mismo stack (sin Atlas).
 #
-# Pasos previos (una vez por cambio de codigo):
-#   .\build-push-all.ps1 -DockerHubUser "doriajacke"
-#
-# Variables requeridas en Dokploy > Environment:
-#   FRONTEND_IMAGE, BACKEND_IMAGE, MONGODB_URL, JWT_SECRET
+# Variables en Dokploy > Environment:
+#   FRONTEND_IMAGE, BACKEND_IMAGE, MONGO_ROOT_PASSWORD, JWT_SECRET
+#   AWS_IOT_* (opcional) + montar certificados en el backend
 # =============================================================================
 
 services:
+  mongodb:
+    image: mongo:7.0
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-change_me_strong_password}
+      MONGO_INITDB_DATABASE: ${MONGODB_DB:-Arandanos}
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mongosh \"mongodb://admin:$$MONGO_INITDB_ROOT_PASSWORD@localhost:27017/?authSource=admin\" --quiet --eval \"db.adminCommand('ping').ok\" || exit 1",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 6
+      start_period: 40s
+    networks:
+      - arandanos-network
+
   backend:
     image: ${BACKEND_IMAGE:-doriajacke/arandanos-backend:latest}
     pull_policy: always
     restart: always
     environment:
-      MONGODB_URL: ${MONGODB_URL}
-      MONGODB_DB: ${MONGODB_DB:-SensoresEmbalse1}
+      MONGODB_URL: mongodb://admin:${MONGO_ROOT_PASSWORD:-change_me_strong_password}@mongodb:27017/?authSource=admin
+      MONGODB_DB: ${MONGODB_DB:-Arandanos}
       SIMULATED_DATA_ENABLED: ${SIMULATED_DATA_ENABLED:-false}
       MAILERSEND_API_TOKEN: ${MAILERSEND_API_TOKEN:-}
       MAILERSEND_FROM_EMAIL: ${MAILERSEND_FROM_EMAIL:-}
@@ -37,6 +56,18 @@ services:
       WEBAPP_URL: ${WEBAPP_URL:-}
       API_PORT: 80
       API_HOST: 0.0.0.0
+      AWS_IOT_ENABLED: ${AWS_IOT_ENABLED:-false}
+      AWS_IOT_ENDPOINT: ${AWS_IOT_ENDPOINT:-a319gtmfe1r2jb-ats.iot.sa-east-1.amazonaws.com}
+      AWS_IOT_CLIENT_ID: ${AWS_IOT_CLIENT_ID:-embalse-backend}
+      AWS_IOT_TOPIC: ${AWS_IOT_TOPIC:-boya/sensores}
+      AWS_IOT_CERT_PATH: /app/iot-certs/4bb52c4252bfb1b205ea09eb59a655000d689f05c3b72aa689f775caa548496e-certificate.pem.crt
+      AWS_IOT_KEY_PATH: /app/iot-certs/4bb52c4252bfb1b205ea09eb59a655000d689f05c3b72aa689f775caa548496e-private.pem.key
+      AWS_IOT_CA_PATH: /app/iot-certs/AmazonRootCA1.pem
+    volumes:
+      - ${AWS_IOT_CERTS_DIR:-./IotCore}:/app/iot-certs:ro
+    depends_on:
+      mongodb:
+        condition: service_healthy
     expose:
       - "80"
     networks:
@@ -52,6 +83,9 @@ services:
       - "8000"
     networks:
       - arandanos-network
+
+volumes:
+  mongodb_data:
 
 networks:
   arandanos-network:

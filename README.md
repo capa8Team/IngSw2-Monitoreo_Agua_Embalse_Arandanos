@@ -29,7 +29,8 @@ La solución está organizada en cuatro capas principales:
 - Procesamiento de lecturas, control de alertas y endpoints de dashboard/histórico.
 
 3. Capa de persistencia
-- MongoDB para datos de sensores e histórico de lecturas.
+- MongoDB (contenedor Docker) para datos de sensores e histórico de lecturas.
+- AWS IoT Core (MQTT) para ingesta de pH, temperatura, conductividad y batería desde dispositivos en campo.
 - Supabase para autenticación, usuarios, roles y configuración administrativa.
 - PostgreSQL de apoyo en entorno de contenedores cuando se levanta con Docker Compose.
 

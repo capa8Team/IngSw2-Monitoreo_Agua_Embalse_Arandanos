@@ -8,26 +8,20 @@ pip install -r backend_fastapi/requirements.txt
 
 ## 2. Configurar MongoDB
 
-Define la variable de entorno para conectar a MongoDB:
+Con Docker Compose (recomendado), MongoDB corre en el servicio `mongodb`:
 
 ```bash
-# Local
-MONGODB_URL=mongodb://localhost:27017
-MONGODB_DB=embalse_arandanos
-
-# O MongoDB Atlas
-MONGODB_URL=mongodb+srv://usuario:contraseña@cluster.mongodb.net/
-MONGODB_DB=embalse_arandanos
+MONGODB_URL=mongodb://admin:Panconpalta1@localhost:27017/?authSource=admin
+MONGODB_DB=Arandanos
 ```
 
-**Instalación local (Windows):**
-- Descarga desde https://www.mongodb.com/try/download/community
-- Instala y ejecuta el servicio de MongoDB
+Desde otro contenedor en la misma red: `mongodb://admin:<password>@mongodb:27017/?authSource=admin`
 
-**MongoDB Atlas (Nube):**
-- Crea una cuenta en https://www.mongodb.com/cloud/atlas
-- Crea un cluster
-- Obtén la cadena de conexión
+Ver `docker-compose.yml` en la raíz del repositorio.
+
+## 2b. AWS IoT Core (opcional)
+
+Para ingestar telemetría por MQTT, activa `AWS_IOT_ENABLED=true`. El topic y formato coinciden con `SketchArduino/ReciberConPostMQTT` (`boya/sensores`). Certificados en `IotCore/`. Guía: [docs/AWS_IOT_CORE.md](../docs/AWS_IOT_CORE.md).
 
 ## 3. Configurar MailerSend (notificaciones por correo)
 
@@ -67,22 +61,17 @@ uvicorn backend_fastapi.main:app --reload --port 8000
 - `POST /api/alerts` - Crear nueva alerta
 - `GET /api/alerts/{alert_id}` - Obtener alerta específica
 
-## Flujo de datos ESP8266 → MongoDB → Frontend
+## Flujo de datos
 
-1. **ESP8266 (arduino-code.ino)**
-   - Lee sensores cada 1 segundo
-   - Envía datos cada 10 segundos vía HTTP PUT a `/api/sensors/ph`
-   - Formato JSON: `{"ph": 7.2, "temperature": 22.5, "conductivity": 650, "timestamp": 1234567890}`
+**Opción A — AWS IoT Core (recomendado en producción)**
 
-2. **Backend FastAPI (main.py)**
-   - Recibe datos en endpoint PUT `/api/sensors/ph`
-   - Guarda en colección `sensor_readings` de MongoDB
-   - Mantiene estado en memoria para dashboard rápido
+Dispositivo → MQTT (AWS IoT) → Backend suscriptor → MongoDB → Frontend
 
-3. **Frontend (Vue.js)**
-   - Solicita dados con `GET /api/dashboard`
-   - Obtiene estado actualizado desde MongoDB
-   - Muestra gráficos y gauges en tiempo real
+**Opción B — HTTP directo (ESP8266)**
+
+1. ESP8266 envía `PUT /api/sensors/ph` o `POST /api/sensors/readings`
+2. Backend guarda en `sensor_readings` (MongoDB)
+3. Frontend consume `GET /api/dashboard`
 
 ## Configuración del archivo .env
 

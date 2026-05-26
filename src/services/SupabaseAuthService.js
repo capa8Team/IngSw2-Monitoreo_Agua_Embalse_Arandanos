@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { supabase, authService } from './supabaseClient'
+import { ensureSupabaseAdminSession } from './supabaseSessionBridge'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -22,6 +23,207 @@ function createIsolatedAuthClient() {
   return isolatedAuthClient
 }
 
+function normalizeDbRole(role) {
+  return role === 'admin' ? 'admin' : 'employee'
+}
+
+function mapUiRoleToDb(role) {
+  const r = String(role || '').toLowerCase()
+  if (r === 'admin' || r === 'administrador') return 'admin'
+  return 'employee'
+}
+
+function isUserVerified(row) {
+  if (!row) return false
+  if (row.is_verified === true || row.is_email_verified === true) return true
+  if (row.email_confirmed_at) return true
+  if (row.last_sign_in_at) return true
+  return false
+}
+
+function normalizeUserRow(row) {
+  if (!row) return null
+  const pk = row.id ?? row.user_id ?? row.uid ?? null
+  if (!pk) return null
+
+  const resolvedRole = String(row.role || 'employee').toLowerCase()
+  const verified = isUserVerified(row)
+  return {
+    ...row,
+    id: pk,
+    email: row.email || row.user_email || 'sin-correo',
+    full_name: row.full_name || row.name || row.nombre || 'N/A',
+    role:
+      resolvedRole === 'admin' || resolvedRole === 'administrador'
+        ? 'admin'
+        : resolvedRole === 'employee' || resolvedRole === 'empleado' || resolvedRole === 'user'
+          ? 'employee'
+          : 'employee',
+    created_at: row.created_at || row.inserted_at || row.updated_at || new Date().toISOString(),
+    email_confirmed_at: row.email_confirmed_at || null,
+    last_sign_in_at: row.last_sign_in_at || null,
+    is_verified: verified,
+    verification_label: verified ? 'Verificado' : 'Pendiente',
+  }
+}
+
+function countVerificationStats(users) {
+  const list = Array.isArray(users) ? users : []
+  const verifiedCount = list.filter((u) => u.is_verified).length
+  return {
+    verifiedCount,
+    pendingCount: list.length - verifiedCount,
+  }
+}
+
+function normalizeUsers(rows) {
+  if (!Array.isArray(rows)) return []
+  return rows.map(normalizeUserRow).filter(Boolean)
+}
+
+/**
+ * Lista usuarios autenticados en Supabase Auth (fuente: RPC admin_list_auth_users).
+ * Requiere sesión admin en Supabase y el script ADMIN_LIST_AUTH_USERS.sql ejecutado.
+ */
+export async function fetchSupabaseAuthUsersForAdmin() {
+  const adminSession = await ensureSupabaseAdminSession()
+  if (!adminSession.ok) {
+    return {
+      success: false,
+      users: [],
+      total: 0,
+      source: null,
+      error: adminSession.message,
+    }
+  }
+
+  if (!supabase) {
+    return {
+      success: false,
+      users: [],
+      total: 0,
+      source: null,
+      error: 'Supabase no configurado',
+    }
+  }
+
+  try {
+    const [{ data: rows, error: listError }, { data: countData, error: countError }] =
+      await Promise.all([
+        supabase.rpc('admin_list_auth_users'),
+        supabase.rpc('admin_auth_users_count'),
+      ])
+
+    if (!listError && Array.isArray(rows)) {
+      const users = normalizeUsers(rows)
+      const totalFromRpc =
+        countError || countData === null || countData === undefined
+          ? users.length
+          : Number(countData)
+      const { verifiedCount, pendingCount } = countVerificationStats(users)
+
+      return {
+        success: true,
+        users,
+        total: Number.isFinite(totalFromRpc) ? totalFromRpc : users.length,
+        verifiedCount,
+        pendingCount,
+        source: 'supabase_auth',
+        error: null,
+      }
+    }
+
+    const missingRpc =
+      listError &&
+      /function.*does not exist|cannot change return type|admin_list_auth_users/i.test(
+        String(listError.message || '')
+      )
+
+    if (missingRpc) {
+      console.warn(
+        '[fetchSupabaseAuthUsersForAdmin] Falta o está desactualizada la RPC admin_list_auth_users. Vuelve a ejecutar ADMIN_LIST_AUTH_USERS.sql (incluye DROP FUNCTION).'
+      )
+    } else if (listError) {
+      console.warn('[fetchSupabaseAuthUsersForAdmin] RPC error:', listError.message)
+    }
+  } catch (rpcException) {
+    console.warn('[fetchSupabaseAuthUsersForAdmin] Excepción RPC:', rpcException.message)
+  }
+
+  const fallbackUsers = await getAllUsersFromRolesTable()
+  const { verifiedCount, pendingCount } = countVerificationStats(fallbackUsers)
+  return {
+    success: fallbackUsers.length > 0,
+    users: fallbackUsers,
+    total: fallbackUsers.length,
+    verifiedCount,
+    pendingCount,
+    source: 'users_roles',
+    error:
+      fallbackUsers.length === 0
+        ? 'No se pudo leer auth.users. Ejecuta ADMIN_LIST_AUTH_USERS.sql en Supabase SQL Editor y recarga la pagina.'
+        : `Solo se muestran ${fallbackUsers.length} fila(s) de users_roles. En Authentication hay mas usuarios: ejecuta ADMIN_LIST_AUTH_USERS.sql para ver los 10 y el estado verificado.`,
+  }
+}
+
+async function getAllUsersFromRolesTable() {
+  const attempts = [
+    async () => supabase.from('users_roles').select('*').order('created_at', { ascending: false }),
+    async () => supabase.from('users_roles').select('*'),
+  ]
+
+  for (const run of attempts) {
+    const { data, error } = await run()
+    if (!error && Array.isArray(data) && data.length > 0) {
+      return normalizeUsers(data)
+    }
+  }
+  return []
+}
+
+async function waitForUserRoleRow(userId, attempts = 8, delayMs = 400) {
+  for (let i = 0; i < attempts; i += 1) {
+    const { data, error } = await supabase
+      .from('users_roles')
+      .select('id, role')
+      .eq('id', userId)
+      .maybeSingle()
+
+    if (!error && data?.id) return data
+    await new Promise((resolve) => setTimeout(resolve, delayMs))
+  }
+  return null
+}
+
+async function syncCreatedUserRole(userId, desiredRole) {
+  if (!supabase) return { success: false, error: 'Supabase no configurado' }
+
+  const dbRole = normalizeDbRole(mapUiRoleToDb(desiredRole))
+  await waitForUserRoleRow(userId)
+
+  const { data: row, error: readError } = await supabase
+    .from('users_roles')
+    .select('id, role')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (readError) {
+    return { success: false, error: readError.message }
+  }
+
+  if (!row?.id) {
+    return {
+      success: false,
+      error:
+        'El usuario se creó en Auth pero no apareció en users_roles. Ejecuta FIX_USERS_ROLES_RLS_RECURSION.sql y verifica el trigger handle_new_user.',
+    }
+  }
+
+  if (row.role === dbRole) return { success: true }
+
+  return updateUserRole(userId, dbRole)
+}
+
 /**
  * Crear un nuevo usuario en Supabase
  * @param {string} email 
@@ -39,9 +241,14 @@ export async function createUserInSupabase(email, password, fullName, role) {
       }
     }
 
+    const adminSession = await ensureSupabaseAdminSession()
+    if (!adminSession.ok) {
+      return { success: false, error: adminSession.message }
+    }
+
     const normalizedEmail = String(email || '').trim().toLowerCase()
     const normalizedFullName = String(fullName || '').trim()
-    const normalizedRole = role === 'admin' ? 'admin' : 'employee'
+    const normalizedRole = normalizeDbRole(mapUiRoleToDb(role))
 
     if (!EMAIL_REGEX.test(normalizedEmail)) {
       return {
@@ -100,6 +307,15 @@ export async function createUserInSupabase(email, password, fullName, role) {
       }
     }
 
+    const roleSync = await syncCreatedUserRole(userId, normalizedRole)
+    if (!roleSync.success) {
+      return {
+        success: false,
+        error: roleSync.error || 'Usuario creado en Auth pero no se pudo sincronizar el rol en users_roles',
+        userId,
+      }
+    }
+
     return {
       success: true,
       userId
@@ -119,32 +335,20 @@ export async function createUserInSupabase(email, password, fullName, role) {
  */
 export async function getAllUsers() {
   try {
+    const adminSession = await ensureSupabaseAdminSession()
+    if (!adminSession.ok) {
+      console.warn('[getAllUsers] Sin sesión admin Supabase:', adminSession.message)
+      return []
+    }
+
     console.log('[getAllUsers] Iniciando carga de usuarios desde Supabase...')
 
-    const normalizeUsers = (rows) => {
-      if (!Array.isArray(rows)) return []
-
-      return rows
-        .map((row) => {
-          const pk = row.id ?? row.user_id ?? row.uid ?? null
-          const resolvedRole = String(row.role || 'user').toLowerCase()
-          return {
-            ...row,
-            id: pk,
-            email: row.email || row.user_email || 'sin-correo',
-            full_name: row.full_name || row.name || row.nombre || 'N/A',
-            role:
-              resolvedRole === 'user'
-                ? 'user'
-                : resolvedRole === 'employee' || resolvedRole === 'empleado'
-                  ? 'employee'
-                  : resolvedRole === 'admin' || resolvedRole === 'administrador'
-                    ? 'admin'
-                    : 'user',
-            created_at: row.created_at || row.inserted_at || row.updated_at || new Date().toISOString(),
-          }
-        })
-        .filter((user) => !!user.id)
+    const authResult = await fetchSupabaseAuthUsersForAdmin()
+    if (authResult.success && authResult.users.length > 0) {
+      console.log(
+        `[getAllUsers] ✅ ${authResult.total} usuario(s) desde ${authResult.source}`
+      )
+      return authResult.users
     }
 
     const attempts = [
@@ -239,13 +443,22 @@ function mergeUsersById(primary, secondary) {
 }
 
 /**
- * Lista unificada para pantallas de administración: combina getAllUsers normalizado
- * con la consulta cruda por si alguna fila queda fuera tras normalizar.
+ * Lista unificada para pantallas de administración (Auth + respaldo users_roles).
  */
 export async function getAllUsersMerged() {
-  const [robust, legacyResult] = await Promise.all([getAllUsers(), authService.getAllUsers()])
+  const authResult = await fetchSupabaseAuthUsersForAdmin()
+  if (authResult.success && authResult.users.length > 0) {
+    return authResult.users
+  }
+
+  const [robust, legacyResult] = await Promise.all([
+    getAllUsersFromRolesTable(),
+    authService.getAllUsers(),
+  ])
   const legacyList =
-    legacyResult.success && Array.isArray(legacyResult.data) ? legacyResult.data : []
+    legacyResult.success && Array.isArray(legacyResult.data)
+      ? normalizeUsers(legacyResult.data)
+      : []
   return mergeUsersById(robust, legacyList)
 }
 
@@ -282,10 +495,15 @@ export async function getUserById(userId) {
  */
 export async function updateUserRole(userId, newRole) {
   try {
+    const adminSession = await ensureSupabaseAdminSession()
+    if (!adminSession.ok) {
+      return { success: false, error: adminSession.message }
+    }
+
     const { error } = await supabase
       .from('users_roles')
       .update({
-        role: newRole === 'admin' ? 'admin' : 'employee',
+        role: normalizeDbRole(mapUiRoleToDb(newRole)),
         updated_at: new Date().toISOString()
       })
       .eq('id', userId)
@@ -309,40 +527,83 @@ export async function updateUserRole(userId, newRole) {
 }
 
 /**
- * Eliminar un usuario (de auth y de users_roles)
- * @param {string} userId 
+ * Eliminar un usuario de Auth (auth.users) y tablas relacionadas (users_roles, etc.).
+ * @param {string} userId
  * @returns {Promise<{success: boolean, error?: string}>}
  */
 export async function deleteUserFromSupabase(userId) {
   try {
-    // 1. Eliminar de users_roles
-    const { error: roleError } = await supabase
-      .from('users_roles')
-      .delete()
-      .eq('id', userId)
+    const adminSession = await ensureSupabaseAdminSession()
+    if (!adminSession.ok) {
+      return { success: false, error: adminSession.message }
+    }
 
-    if (roleError) {
-      console.error('Error deleting user role:', roleError)
+    if (!userId) {
+      return { success: false, error: 'ID de usuario invalido' }
+    }
+
+    const { data: deleted, error: rpcError } = await supabase.rpc('admin_delete_auth_user', {
+      target_user_id: userId,
+    })
+
+    if (!rpcError && deleted === true) {
+      return { success: true }
+    }
+
+    if (!rpcError && deleted === false) {
       return {
         success: false,
-        error: roleError.message
+        error: 'No se encontró el usuario en Supabase Auth (puede que ya fue eliminado).',
       }
     }
 
-    // 2. Eliminar de Auth
-    const { error: authError } = await supabase.auth.admin.deleteUser(userId)
+    const missingRpc =
+      rpcError &&
+      /function.*does not exist|admin_delete_auth_user/i.test(String(rpcError.message || ''))
 
-    if (authError) {
-      console.error('Error deleting auth user:', authError)
-      // No retornamos error aquí porque ya eliminamos del DB
+    if (missingRpc) {
+      return {
+        success: false,
+        error:
+          'Falta la función admin_delete_auth_user. Ejecuta ADMIN_DELETE_AUTH_USER.sql en el SQL Editor de Supabase.',
+      }
     }
 
-    return { success: true }
+    if (rpcError) {
+      const raw = rpcError.message || ''
+      if (/does not exist|42P01/i.test(raw)) {
+        return {
+          success: false,
+          error:
+            'La función de borrado en Supabase está desactualizada. Vuelve a ejecutar ADMIN_DELETE_AUTH_USER.sql en el SQL Editor y recarga la página.',
+        }
+      }
+      if (/No puedes eliminar tu propia cuenta/i.test(raw)) {
+        return { success: false, error: 'No puedes eliminar la cuenta con la que iniciaste sesión.' }
+      }
+      if (/Solo administradores/i.test(raw)) {
+        return { success: false, error: 'Tu sesión de Supabase no tiene permisos de administrador.' }
+      }
+      console.error('Error RPC admin_delete_auth_user:', rpcError)
+      return { success: false, error: raw || 'Error al eliminar usuario en Supabase' }
+    }
+
+    // Respaldo: solo users_roles (cuenta Auth quedaría huérfana en el panel de Supabase)
+    const { error: roleError } = await supabase.from('users_roles').delete().eq('id', userId)
+    if (roleError) {
+      return { success: false, error: roleError.message }
+    }
+
+    return {
+      success: false,
+      error:
+        'Solo se eliminó users_roles. Ejecuta ADMIN_DELETE_AUTH_USER.sql para borrar también en Authentication.',
+    }
   } catch (error) {
     console.error('Exception in deleteUserFromSupabase:', error)
     return {
       success: false,
-      error: error.message
+      error: error.message,
     }
   }
 }
@@ -421,6 +682,7 @@ export async function getAlertLimitsByAdmin(adminId) {
 
 export default {
   createUserInSupabase,
+  fetchSupabaseAuthUsersForAdmin,
   getAllUsers,
   getAllUsersMerged,
   getUserById,

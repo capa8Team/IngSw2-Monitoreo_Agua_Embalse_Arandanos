@@ -5,6 +5,10 @@
       <button @click="showAddUserModal = true" class="add-user-btn">+ Nuevo Usuario</button>
     </div>
 
+    <div v-if="supabaseSessionWarning" class="error-message session-warning">
+      {{ supabaseSessionWarning }}
+    </div>
+
     <!-- Modal para agregar usuario -->
     <div v-if="showAddUserModal" class="modal-overlay" @click.self="showAddUserModal = false">
       <div class="modal-content">
@@ -48,7 +52,7 @@
           <div class="form-group">
             <label>Rol</label>
             <select v-model="newUser.role" required>
-              <option value="user">Usuario Normal</option>
+              <option value="employee">Trabajador</option>
               <option value="admin">Administrador</option>
             </select>
           </div>
@@ -67,6 +71,14 @@
       </div>
     </div>
 
+    <p v-if="!isLoading" class="users-count-summary">
+      <strong>{{ supabaseUsersTotal }}</strong> en Auth —
+      <strong style="color:#2e7d32">{{ supabaseUsersVerified }}</strong> verificados,
+      <strong style="color:#b45309">{{ supabaseUsersPending }}</strong> pendientes
+      <span v-if="usersListSource === 'supabase_auth'"> (sincronizado)</span>
+    </p>
+    <div v-if="usersLoadError" class="error-message session-warning">{{ usersLoadError }}</div>
+
     <!-- Tabla de usuarios -->
     <div class="users-table">
       <table>
@@ -74,6 +86,7 @@
           <tr>
             <th>Nombre</th>
             <th>Correo</th>
+            <th>Estado</th>
             <th>Rol</th>
             <th>Creado</th>
             <th>Acciones</th>
@@ -84,12 +97,20 @@
             <td>{{ user.full_name }}</td>
             <td>{{ user.email }}</td>
             <td>
+              <span
+                class="verification-pill"
+                :class="user.is_verified ? 'verified' : 'pending'"
+              >
+                {{ user.verification_label || (user.is_verified ? 'Verificado' : 'Pendiente') }}
+              </span>
+            </td>
+            <td>
               <select
                 :value="user.role"
                 @change="(e) => handleUpdateRole(user.id, e.target.value)"
                 class="role-select"
               >
-                <option value="user">Usuario</option>
+                <option value="employee">Trabajador</option>
                 <option value="admin">Admin</option>
               </select>
             </td>
@@ -106,26 +127,51 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { authService } from '../services/supabaseClient'
-import { getAllUsersMerged } from '../services/SupabaseAuthService'
+import {
+  createUserInSupabase,
+  fetchSupabaseAuthUsersForAdmin,
+  updateUserRole,
+  deleteUserFromSupabase,
+} from '../services/SupabaseAuthService'
+import { ensureSupabaseAdminSession } from '../services/supabaseSessionBridge'
 
 const users = ref([])
+const supabaseUsersTotal = ref(0)
+const supabaseUsersVerified = ref(0)
+const supabaseUsersPending = ref(0)
+const usersListSource = ref(null)
+const usersLoadError = ref('')
 const showAddUserModal = ref(false)
 const newUserError = ref('')
 const isLoading = ref(false)
+
+const supabaseSessionWarning = ref('')
 
 const newUser = ref({
   fullName: '',
   email: '',
   password: '',
-  role: 'user',
+  role: 'employee',
 })
+
+const refreshSupabaseSessionState = async () => {
+  const check = await ensureSupabaseAdminSession()
+  supabaseSessionWarning.value = check.ok ? '' : check.message
+  return check.ok
+}
 
 // Cargar usuarios (lista unificada: normalizada + consulta cruda)
 const loadUsers = async () => {
   isLoading.value = true
   try {
-    users.value = await getAllUsersMerged()
+    await refreshSupabaseSessionState()
+    const result = await fetchSupabaseAuthUsersForAdmin()
+    users.value = result.users || []
+    supabaseUsersTotal.value = result.total ?? users.value.length
+    supabaseUsersVerified.value = result.verifiedCount ?? users.value.filter((u) => u.is_verified).length
+    supabaseUsersPending.value = result.pendingCount ?? supabaseUsersTotal.value - supabaseUsersVerified.value
+    usersListSource.value = result.source
+    usersLoadError.value = result.error || ''
   } catch (error) {
     console.error('Error cargando usuarios en AdminUsers:', error)
   }
@@ -141,7 +187,7 @@ const handleCreateUser = async () => {
     return
   }
 
-  const result = await authService.createUserAsAdmin(
+  const result = await createUserInSupabase(
     newUser.value.email,
     newUser.value.password,
     newUser.value.fullName,
@@ -154,7 +200,7 @@ const handleCreateUser = async () => {
       fullName: '',
       email: '',
       password: '',
-      role: 'user',
+      role: 'employee',
     }
     await loadUsers()
   } else {
@@ -164,7 +210,7 @@ const handleCreateUser = async () => {
 
 // Actualizar rol
 const handleUpdateRole = async (userId, newRole) => {
-  const result = await authService.updateUserRole(userId, newRole)
+  const result = await updateUserRole(userId, newRole)
   if (result.success) {
     await loadUsers()
   }
@@ -172,11 +218,18 @@ const handleUpdateRole = async (userId, newRole) => {
 
 // Eliminar usuario
 const handleDeleteUser = async (userId) => {
-  if (confirm('¿Estás seguro de que deseas eliminar este usuario?')) {
-    const result = await authService.deleteUser(userId)
-    if (result.success) {
-      await loadUsers()
-    }
+  const target = users.value.find((u) => u.id === userId)
+  const label = target?.email || userId
+  if (!confirm(`¿Eliminar permanentemente ${label} en Supabase Auth?`)) {
+    return
+  }
+
+  const result = await deleteUserFromSupabase(userId)
+  if (result.success) {
+    newUserError.value = ''
+    await loadUsers()
+  } else {
+    newUserError.value = result.error || 'No se pudo eliminar el usuario'
   }
 }
 
@@ -366,6 +419,34 @@ tr:hover {
   outline: none;
   border-color: #667eea;
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.session-warning {
+  margin-bottom: 16px;
+}
+
+.users-count-summary {
+  margin: 0 0 16px 0;
+  font-size: 15px;
+  color: #444;
+}
+
+.verification-pill {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.verification-pill.verified {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.verification-pill.pending {
+  background: #fff3e0;
+  color: #e65100;
 }
 
 .error-message {

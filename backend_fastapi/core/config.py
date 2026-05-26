@@ -1,6 +1,18 @@
-import os
-from typing import List
+from pathlib import Path
+from typing import List, Self
+
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Raíz del repo (backend_fastapi/core -> parents[2])
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+IOT_CORE_DIR = PROJECT_ROOT / "IotCore"
+# Prefijo de archivos generados en AWS IoT (carpeta IotCore/)
+IOT_CERT_ID = "4bb52c4252bfb1b205ea09eb59a655000d689f05c3b72aa689f775caa548496e"
+# Endpoint y topic del sketch ReciberConPostMQTT (secrets.h / ReciberConPostMQTT.ino)
+AWS_IOT_DEFAULT_ENDPOINT = "a319gtmfe1r2jb-ats.iot.sa-east-1.amazonaws.com"
+AWS_IOT_DEFAULT_TOPIC = "boya/sensores"
+
 
 class Settings(BaseSettings):
     # ========================================================================
@@ -11,10 +23,40 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     
     # ========================================================================
-    # MONGODB
+    # MONGODB (Docker Compose o instancia local)
     # ========================================================================
-    MONGODB_URL: str = "mongodb://localhost:27017"
+    MONGODB_URL: str = "mongodb://admin:Panconpalta1@localhost:27017/?authSource=admin"
     MONGODB_DB: str = "Arandanos"
+
+    # ========================================================================
+    # AWS IoT Core (MQTT — telemetría de sensores)
+    # ========================================================================
+    AWS_IOT_ENABLED: bool = False
+    AWS_IOT_ENDPOINT: str = AWS_IOT_DEFAULT_ENDPOINT
+    AWS_IOT_PORT: int = 8883
+    AWS_IOT_CLIENT_ID: str = "embalse-backend"
+    AWS_IOT_TOPIC: str = AWS_IOT_DEFAULT_TOPIC
+    AWS_IOT_CERT_PATH: str | None = None
+    AWS_IOT_KEY_PATH: str | None = None
+    AWS_IOT_CA_PATH: str | None = None
+    AWS_IOT_DEFAULT_DEVICE_ID: str = "boya"
+
+    model_config = SettingsConfigDict(
+        env_file=(str(PROJECT_ROOT / ".env"), ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    @model_validator(mode="after")
+    def resolve_iot_cert_paths(self) -> Self:
+        """Rutas por defecto a IotCore/ (mismos certificados que ReciberConPostMQTT)."""
+        if not self.AWS_IOT_CERT_PATH:
+            self.AWS_IOT_CERT_PATH = str(IOT_CORE_DIR / f"{IOT_CERT_ID}-certificate.pem.crt")
+        if not self.AWS_IOT_KEY_PATH:
+            self.AWS_IOT_KEY_PATH = str(IOT_CORE_DIR / f"{IOT_CERT_ID}-private.pem.key")
+        if not self.AWS_IOT_CA_PATH:
+            self.AWS_IOT_CA_PATH = str(IOT_CORE_DIR / "AmazonRootCA1.pem")
+        return self
 
     # ========================================================================
     # MAILERSEND
@@ -49,8 +91,6 @@ class Settings(BaseSettings):
     JWT_REFRESH_DAYS: int = 7
     AUTH_DEMO_PASSWORD: str = "123456789"
     SUPABASE_DB_URL: str | None = None
-
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     @property
     def parsed_to_emails(self) -> List[str]:
