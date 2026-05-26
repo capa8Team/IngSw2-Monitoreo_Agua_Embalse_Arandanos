@@ -101,18 +101,27 @@ export const authService = {
     }
   },
 
-  // Crear usuario como administrador (solo admin)
-  async createUserAsAdmin(email, password, fullName, role = 'user') {
+  // Crear usuario (el trigger handle_new_user en Supabase completa users_roles)
+  async createUserAsAdmin(email, password, fullName, role = 'employee') {
     try {
+      const normalizedRole =
+        String(role).toLowerCase() === 'admin' || String(role).toLowerCase() === 'administrador'
+          ? 'admin'
+          : String(role).toLowerCase() === 'user'
+            ? 'user'
+            : 'employee'
+
       const { data: authData, error: authError } = await requireClient().auth.signUp({
-        email, password, options: { data: { full_name: fullName } },
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+            role: normalizedRole,
+          },
+        },
       })
       if (authError) throw authError
-
-      const { error: roleError } = await requireClient()
-        .from('users_roles')
-        .insert([{ id: authData.user.id, email, role, full_name: fullName, created_at: new Date().toISOString() }])
-      if (roleError) throw roleError
 
       return { success: true, data: authData }
     } catch (error) {

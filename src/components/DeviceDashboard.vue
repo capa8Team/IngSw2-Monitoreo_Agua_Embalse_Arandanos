@@ -333,6 +333,10 @@
         </div>
 
         <div class="user-management-content">
+          <div v-if="supabaseSessionWarning" class="error-message session-warning">
+            {{ supabaseSessionWarning }}
+          </div>
+
           <div class="user-creation-form">
             <h3>Crear nueva cuenta</h3>
             <div class="form-grid">
@@ -375,29 +379,76 @@
 
           <div class="users-list">
             <div class="users-list-header">
-              <h3>Usuarios existentes</h3>
+              <div class="users-list-title-block">
+                <h3>Usuarios en Supabase Auth</h3>
+                <p v-if="!isLoadingUsers" class="users-count-summary">
+                  <strong>{{ supabaseUsersTotal }}</strong> en Supabase Auth —
+                  <strong class="verified-count">{{ supabaseUsersVerified }}</strong> verificados,
+                  <strong class="pending-count">{{ supabaseUsersPending }}</strong> pendientes
+                  <span v-if="usersListSource === 'supabase_auth'" class="users-source-tag">· sincronizado con Auth</span>
+                  <span v-else-if="usersListSource === 'users_roles'" class="users-source-tag users-source-warn">· incompleto (falta RPC)</span>
+                </p>
+              </div>
               <button class="refresh-users-btn" @click="loadExistingUsers" :disabled="isLoadingUsers">
                 {{ isLoadingUsers ? '⟳ Cargando...' : '↻ Actualizar' }}
+              </button>
+            </div>
+            <div v-if="usersLoadError" class="error-message users-load-hint">
+              {{ usersLoadError }}
+            </div>
+            <div v-if="!isLoadingUsers && existingUsers.length > 0" class="users-filter-bar">
+              <button
+                type="button"
+                class="filter-chip"
+                :class="{ active: userVerificationFilter === 'all' }"
+                @click="userVerificationFilter = 'all'"
+              >
+                Todos ({{ existingUsers.length }})
+              </button>
+              <button
+                type="button"
+                class="filter-chip"
+                :class="{ active: userVerificationFilter === 'verified' }"
+                @click="userVerificationFilter = 'verified'"
+              >
+                Verificados ({{ supabaseUsersVerified }})
+              </button>
+              <button
+                type="button"
+                class="filter-chip"
+                :class="{ active: userVerificationFilter === 'pending' }"
+                @click="userVerificationFilter = 'pending'"
+              >
+                Pendientes ({{ supabaseUsersPending }})
               </button>
             </div>
             <div v-if="isLoadingUsers" class="loading-users">
               Cargando usuarios...
             </div>
-            <div v-else-if="existingUsers.length > 0" class="users-table">
+            <div v-else-if="displayedUsers.length > 0" class="users-table">
               <table>
                 <thead>
                   <tr>
                     <th>Email</th>
                     <th>Nombre</th>
+                    <th>Estado</th>
                     <th>Rol</th>
                     <th>Creado</th>
                     <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="user in existingUsers" :key="user.id">
+                  <tr v-for="user in displayedUsers" :key="user.id">
                     <td>{{ user.email }}</td>
                     <td>{{ user.full_name || 'N/A' }}</td>
+                    <td>
+                      <span
+                        class="verification-badge"
+                        :class="user.is_verified ? 'verification-verified' : 'verification-pending'"
+                      >
+                        {{ user.verification_label || (user.is_verified ? 'Verificado' : 'Pendiente') }}
+                      </span>
+                    </td>
                     <td>
                       <span class="role-badge" :class="`role-${user.role}`">
                         {{ user.role === 'admin' ? 'Admin' : 'Trabajador' }}
@@ -412,7 +463,15 @@
               </table>
             </div>
             <div v-else class="no-users">
-              No hay usuarios registrados aun.
+              <template v-if="supabaseSessionWarning">
+                Inicia sesión con una cuenta admin de Supabase para ver el listado.
+              </template>
+              <template v-else-if="existingUsers.length > 0 && displayedUsers.length === 0">
+                Ningún usuario coincide con el filtro seleccionado.
+              </template>
+              <template v-else>
+                No hay usuarios en Supabase Auth (total: 0).
+              </template>
             </div>
           </div>
         </div>
@@ -538,7 +597,14 @@ import SensorCard from './SensorCard.vue'
 import BatteryIndicator from './BatteryIndicator.vue'
 import { checkAndSendAlerts } from '../services/AlertService.js'
 import { fetchDashboardData, fetchSensorHistory, IS_SIMULATED_MODE, DATA_MODE } from '../services/ArduinoConfig.js'
-import { createUserInSupabase, getAllUsersMerged, deleteUserFromSupabase, getAlertLimitsByAdmin, getCurrentUser } from '../services/SupabaseAuthService.js'
+import {
+  createUserInSupabase,
+  fetchSupabaseAuthUsersForAdmin,
+  deleteUserFromSupabase,
+  getAlertLimitsByAdmin,
+  getCurrentUser,
+} from '../services/SupabaseAuthService.js'
+import { ensureSupabaseAdminSession } from '../services/supabaseSessionBridge.js'
 import { clearSession, stopSessionIdleWatcher, hasValidSessionToken } from '../services/sessionAuth.js'
 
 const router = useRouter()
@@ -647,8 +713,26 @@ const newUser = ref({
 const isCreatingUser = ref(false)
 const userCreationError = ref('')
 const userCreationSuccess = ref('')
+const supabaseSessionWarning = ref('')
 const existingUsers = ref([])
+const supabaseUsersTotal = ref(0)
+const supabaseUsersVerified = ref(0)
+const supabaseUsersPending = ref(0)
+const userVerificationFilter = ref('all')
+const usersListSource = ref(null)
+const usersLoadError = ref('')
 const isLoadingUsers = ref(false)
+
+const displayedUsers = computed(() => {
+  const list = existingUsers.value || []
+  if (userVerificationFilter.value === 'verified') {
+    return list.filter((u) => u.is_verified)
+  }
+  if (userVerificationFilter.value === 'pending') {
+    return list.filter((u) => !u.is_verified)
+  }
+  return list
+})
 
 const devices = ref([
   {
@@ -969,10 +1053,18 @@ const openAlertConfigView = () => {
   currentView.value = 'admin-alerts'
 }
 
+const refreshSupabaseSessionState = async () => {
+  const check = await ensureSupabaseAdminSession()
+  supabaseSessionWarning.value = check.ok ? '' : check.message
+  return check.ok
+}
+
 const openUserManagementView = async () => {
   if (!isAdmin.value) return
   currentView.value = 'admin-users'
-  await loadExistingUsers()
+  const ready = await refreshSupabaseSessionState()
+  if (ready) await loadExistingUsers()
+  startUsersAutoRefresh()
 }
 
 const goToDashboardView = () => {
@@ -1073,20 +1165,15 @@ const createNewUser = async () => {
     )
 
     if (result.success) {
-      userCreationSuccess.value = `Usuario ${sanitizedEmail} creado exitosamente`
+      userCreationSuccess.value =
+        `Usuario ${sanitizedEmail} creado en Supabase. Aparece en la lista como Pendiente hasta que confirme el correo; tras aceptar la invitación, pulsa Actualizar y pasará a Verificado.`
       newUser.value = {
         email: '',
         password: '',
         fullName: '',
         role: 'employee'
       }
-      
-      // Esperar más tiempo para que el trigger sincronice el usuario a users_roles
-      console.log('[createNewUser] ✅ Usuario creado, esperando sincronización (3 segundos)...')
-      await new Promise(resolve => setTimeout(resolve, 3000))
-      
-      // Recargar lista de usuarios
-      console.log('[createNewUser] Recargando lista de usuarios...')
+
       await loadExistingUsers()
       console.log('[createNewUser] ✅ Lista de usuarios refrescada')
     } else {
@@ -1102,44 +1189,77 @@ const createNewUser = async () => {
 
 const loadExistingUsers = async () => {
   isLoadingUsers.value = true
+  usersLoadError.value = ''
   console.log('[loadExistingUsers] Iniciando carga...')
   try {
-    const users = await getAllUsersMerged()
-    console.log('[loadExistingUsers] Respuesta de getAllUsersMerged:', users)
-    console.log('[loadExistingUsers] Cantidad de usuarios:', users?.length || 0)
-    
-    // Solo actualizar si realmente hay datos
-    if (users && Array.isArray(users)) {
-      existingUsers.value = users
-      console.log('[loadExistingUsers] ✅ Usuarios actualizados exitosamente')
-    } else {
-      console.warn('[loadExistingUsers] ⚠️ Respuesta inválida, manteniendo lista anterior')
+    await refreshSupabaseSessionState()
+    const result = await fetchSupabaseAuthUsersForAdmin()
+    console.log('[loadExistingUsers] Resultado:', result)
+
+    if (Array.isArray(result.users)) {
+      existingUsers.value = result.users
+      supabaseUsersTotal.value = result.total ?? result.users.length
+      supabaseUsersVerified.value = result.verifiedCount ?? result.users.filter((u) => u.is_verified).length
+      supabaseUsersPending.value = result.pendingCount ?? supabaseUsersTotal.value - supabaseUsersVerified.value
+      usersListSource.value = result.source
+      usersLoadError.value = result.error || ''
+      userVerificationFilter.value = 'all'
+    }
+
+    if (!result.success && !result.users?.length) {
+      usersLoadError.value = result.error || usersLoadError.value
+      supabaseUsersTotal.value = 0
+      existingUsers.value = []
     }
   } catch (error) {
     console.error('[loadExistingUsers] ❌ Error al cargar usuarios:', error)
-    console.error('[loadExistingUsers] Stack:', error.stack)
-    // NO limpiar la lista en caso de error, mantener lo que había
+    usersLoadError.value = error?.message || 'Error al cargar usuarios'
   } finally {
     isLoadingUsers.value = false
   }
 }
 
 const deleteUser = async (userId) => {
-  if (!confirm('¿Estás seguro de que quieres eliminar este usuario?')) {
+  const target = existingUsers.value.find((u) => u.id === userId)
+  const label = target?.email || userId
+  if (!confirm(`¿Eliminar permanentemente la cuenta ${label} en Supabase Auth?`)) {
     return
   }
 
   try {
     const result = await deleteUserFromSupabase(userId)
     if (result.success) {
+      userCreationSuccess.value = `Cuenta ${label} eliminada de Supabase.`
+      userCreationError.value = ''
       await loadExistingUsers()
+    } else {
+      userCreationError.value = result.error || 'No se pudo eliminar el usuario'
+      userCreationSuccess.value = ''
     }
   } catch (error) {
     console.error('Error al eliminar usuario:', error)
+    userCreationError.value = error?.message || 'Error al eliminar usuario'
   }
 }
 
 let updateInterval = null
+let usersRefreshInterval = null
+
+const stopUsersAutoRefresh = () => {
+  if (usersRefreshInterval) {
+    clearInterval(usersRefreshInterval)
+    usersRefreshInterval = null
+  }
+}
+
+const startUsersAutoRefresh = () => {
+  stopUsersAutoRefresh()
+  usersRefreshInterval = setInterval(() => {
+    if (currentView.value === 'admin-users' && !isLoadingUsers.value) {
+      loadExistingUsers()
+    }
+  }, 45000)
+}
 
 const updateSensorData = async () => {
   if (!selectedDeviceId.value) return
@@ -1174,6 +1294,14 @@ const stopSensorUpdates = () => {
     updateInterval = null
   }
 }
+
+watch(currentView, (view) => {
+  if (view === 'admin-users') {
+    startUsersAutoRefresh()
+  } else {
+    stopUsersAutoRefresh()
+  }
+})
 
 watch(() => SENSOR_LIMITS_CONFIG.value,
   () => { hasUnsavedChanges.value = true },
@@ -1210,6 +1338,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopSensorUpdates()
+  stopUsersAutoRefresh()
 })
 </script>
 
@@ -1757,8 +1886,82 @@ onUnmounted(() => {
 .users-list-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 12px;
   margin-bottom: 16px;
+}
+
+.users-list-title-block h3 {
+  color: #333;
+  margin: 0 0 4px 0;
+}
+
+.users-count-summary {
+  margin: 0;
+  font-size: 14px;
+  color: #555;
+}
+
+.users-source-tag {
+  font-size: 13px;
+  color: #667eea;
+}
+
+.users-source-warn {
+  color: #b45309;
+}
+
+.users-load-hint {
+  margin-bottom: 12px;
+}
+
+.users-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.filter-chip {
+  padding: 6px 12px;
+  border: 1px solid #d0d0d0;
+  border-radius: 999px;
+  background: #fff;
+  color: #444;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.filter-chip.active {
+  background: #667eea;
+  border-color: #667eea;
+  color: #fff;
+}
+
+.verified-count {
+  color: #2e7d32;
+}
+
+.pending-count {
+  color: #b45309;
+}
+
+.verification-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.verification-verified {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.verification-pending {
+  background: #fff3e0;
+  color: #e65100;
 }
 
 .users-list-header h3 {

@@ -1,4 +1,5 @@
 import { createCorrelationId, appLogger } from '../utils/logger.js'
+import { clearSupabaseSession } from './supabaseSessionBridge.js'
 
 /**
  * Access JWT: 30 min solo administrador; empleado con validez mayor (config en API).
@@ -84,6 +85,7 @@ export function clearSession() {
   localStorage.removeItem('isAuthenticated')
   localStorage.removeItem('userEmail')
   localStorage.removeItem('userRole')
+  clearSupabaseSession()
 }
 
 export function isAdminRole(role) {

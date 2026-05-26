@@ -59,6 +59,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import ThemeToggleButton from '../components/ThemeToggleButton.vue'
 import { apiLogin, persistSession, startSessionIdleWatcher } from '../services/sessionAuth.js'
+import { syncSupabaseSessionAfterLogin } from '../services/supabaseSessionBridge.js'
 
 const router = useRouter()
 
@@ -80,8 +81,15 @@ const handleLogin = async () => {
 
   isLoading.value = true
   try {
-    const data = await apiLogin(form.value.email.trim(), form.value.password)
+    const email = form.value.email.trim()
+    const data = await apiLogin(email, form.value.password)
     persistSession(data)
+
+    const supabaseBridge = await syncSupabaseSessionAfterLogin(email, form.value.password)
+    if (!supabaseBridge.success && !supabaseBridge.skipped) {
+      console.warn('[Login] Sesión Supabase no vinculada:', supabaseBridge.error, supabaseBridge.detail || '')
+    }
+
     startSessionIdleWatcher(router)
     await router.push('/dashboard')
   } catch (e) {
