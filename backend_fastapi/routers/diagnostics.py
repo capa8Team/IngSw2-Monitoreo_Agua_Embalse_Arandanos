@@ -1,6 +1,7 @@
 import logging
 from fastapi import APIRouter
 from services.mongodb import db, get_latest_sensor_reading, chile_now, to_chile_time
+from services.aws_iot import aws_iot_service
 from core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ def get_diagnostics() -> dict:
             arduino_connected = seconds_since <= 30
             data_source = "real"
 
+    iot = aws_iot_service.status
     return {
         "mongodb_connected": mongodb_connected,
         "data_source": data_source,
@@ -36,6 +38,16 @@ def get_diagnostics() -> dict:
         "arduino_connected": arduino_connected,
         "last_reading": str(last_reading_time) if last_reading_time else None,
         "db": settings.MONGODB_DB if mongodb_connected else "none",
+        "aws_iot": {
+            "enabled": iot.enabled,
+            "configured": iot.configured,
+            "connected": iot.connected,
+            "subscribed": iot.subscribed,
+            "topic": iot.topic,
+            "messages_received": iot.messages_received,
+            "last_message_at": str(iot.last_message_at) if iot.last_message_at else None,
+            "last_error": iot.last_error,
+        },
         "message": (
             "Usando datos reales de MongoDB"
             if data_source == "real"

@@ -10,7 +10,7 @@ from core.config import settings
 from core.log_service import log_service
 from core.log_origins import LogLevel, LogOrigin
 from models import (
-    SensorMongoPayload, SensorMeasurements, SensorReading, 
+    SensorMongoPayload, SensorMeasurements, SensorReading,
     SensorPhPostReading, DashboardResponse, Metadata, SensorData
 )
 
@@ -45,9 +45,10 @@ def epoch_to_utc_datetime(epoch: int) -> datetime:
     return datetime.fromtimestamp(seconds, tz=timezone.utc)
 
 # ============================================================================
-# CONEXIÓN MONGODB
+# CONEXIÓN MONGODB (contenedor Docker o instancia local)
 # ============================================================================
 db = None
+mongo_client: MongoClient | None = None
 
 try:
     mongo_client = MongoClient(
@@ -56,40 +57,23 @@ try:
         connectTimeoutMS=5000,
         socketTimeoutMS=5000,
     )
-    mongo_client.admin.command('ping')
+    mongo_client.admin.command("ping")
     db = mongo_client[settings.MONGODB_DB]
-    logger.info("Conexion a MongoDB establecida")
+    logger.info("Conexión a MongoDB establecida (%s)", settings.MONGODB_DB)
     log_service.log_db(
         LogLevel.INFO, "Conexión a MongoDB establecida",
         component="mongo.client", operation="connect", query_type="read",
         table_name="sensor_readings",
     )
-except Exception as e:
-    logger.warning(f"No se pudo conectar a MongoDB con SSL verificado: {e}")
-    try:
-        mongo_client = MongoClient(
-            settings.MONGODB_URL,
-            serverSelectionTimeoutMS=5000,
-            connectTimeoutMS=5000,
-            socketTimeoutMS=5000,
-            tlsAllowInvalidCertificates=True,
-            tlsAllowInvalidHostnames=True,
-        )
-        mongo_client.admin.command('ping')
-        db = mongo_client[settings.MONGODB_DB]
-        logger.info("Conexión a MongoDB establecida (con SSL deshabilitado)")
-        log_service.log_db(
-            LogLevel.WARN, "MongoDB conectado sin verificación SSL",
-            component="mongo.client", operation="connect", query_type="read",
-        )
-    except Exception as e2:
-        logger.error(f"MongoDB no disponible. Fallback a memoria. Error: {e2}")
-        log_service.log_db(
-            LogLevel.FATAL, f"MongoDB no disponible: {e2}",
-            component="mongo.client", operation="connect", query_type="read",
-            details={"error_type": type(e2).__name__},
-        )
-        db = None
+except (ConnectionFailure, Exception) as e:
+    logger.error("MongoDB no disponible. Fallback a memoria. Error: %s", e)
+    log_service.log_db(
+        LogLevel.FATAL, f"MongoDB no disponible: {e}",
+        component="mongo.client", operation="connect", query_type="read",
+        details={"error_type": type(e).__name__},
+    )
+    mongo_client = None
+    db = None
 
 # ============================================================================
 # LÓGICA DE NEGOCIO Y BASE DE DATOS
@@ -101,7 +85,7 @@ def _resolve_sensor_timestamp(timestamp: int | None) -> tuple[datetime, int | No
         return epoch_to_utc_datetime(timestamp), None
     return utc_now(), timestamp
 
-def save_sensor_payload_to_mongodb(payload: SensorMongoPayload) -> Optional[str]:
+def save_sensor_payload_to_mongodb(payload: SensorMongoPayload, source: str = "api") -> Optional[str]:
     if db is None:
         logger.warning("MongoDB no está disponible")
         return None
@@ -113,15 +97,16 @@ def save_sensor_payload_to_mongodb(payload: SensorMongoPayload) -> Optional[str]
             "timestamp": sensor_timestamp,
             "mediciones": payload.mediciones.model_dump(),
             "bateria": payload.bateria,
+            "source": source,
         }
         if sensor_uptime is not None:
             document["sensor_uptime_seconds"] = sensor_uptime
 
         result = collection.insert_one(document)
-        logger.info(f"Lectura guardada en MongoDB con ID: {result.inserted_id}")
+        logger.info("Lectura guardada en MongoDB con ID: %s (origen: %s)", result.inserted_id, source)
         return str(result.inserted_id)
     except Exception as e:
-        logger.error(f"Error guardando en MongoDB: {e}")
+        logger.error("Error guardando en MongoDB: %s", e)
         return None
 
 def save_sensor_reading_to_mongodb(reading: SensorReading, arduino_id: str = "esp8266_1", bateria: int = 100) -> Optional[str]:
@@ -154,8 +139,8 @@ def get_latest_sensor_reading() -> Optional[dict]:
             if reading:
                 return normalize_sensor_document(reading)
         except Exception as e:
-            logger.error(f"Error leyendo de MongoDB: {e}")
-    
+            logger.error("Error leyendo de MongoDB: %s", e)
+
     if simulated_data_store:
         return normalize_sensor_document(simulated_data_store[-1])
     return None
@@ -166,8 +151,8 @@ def get_sensor_readings_history(limit: int = 100) -> list[dict]:
             readings = list(db["sensor_readings"].find().sort("_id", -1).limit(limit))
             return [normalize_sensor_document(reading) for reading in readings]
         except Exception as e:
-            logger.error(f"Error leyendo historial de MongoDB: {e}")
-    
+            logger.error("Error leyendo historial de MongoDB: %s", e)
+
     if simulated_data_store:
         readings = simulated_data_store[-limit:][::-1]
         return [normalize_sensor_document(reading) for reading in readings]
