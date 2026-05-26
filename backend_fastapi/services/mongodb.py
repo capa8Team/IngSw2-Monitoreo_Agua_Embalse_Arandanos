@@ -213,3 +213,204 @@ def build_payload_from_ph_post(reading: SensorPhPostReading) -> SensorMongoPaylo
         ),
         bateria=reading.bateria,
     )
+
+# ============================================================================
+# GESTIÓN DE DISPOSITIVOS (MICROCONTROLADORES / ARDUINOS)
+# ============================================================================
+
+def create_device(name: str, device_type: str, location: str, arduino_id: str | None = None) -> Optional[dict]:
+    """Crea un nuevo dispositivo en la base de datos."""
+    if db is None:
+        logger.warning("MongoDB no está disponible")
+        return None
+    
+    try:
+        import uuid
+        collection = db["devices"]
+        device_id = str(uuid.uuid4())
+        now = utc_now()
+        
+        device = {
+            "_id": device_id,
+            "id": device_id,
+            "name": name,
+            "device_type": device_type,
+            "location": location,
+            "status": "unknown",
+            "arduino_id": arduino_id,
+            "battery": 100,
+            "last_sync": None,
+            "created_at": now,
+            "updated_at": now,
+            "active": True,
+        }
+        
+        collection.insert_one(device)
+        logger.info("Dispositivo creado: %s (ID: %s)", name, device_id)
+        return device
+    except Exception as e:
+        logger.error("Error creando dispositivo: %s", e)
+        return None
+
+def get_device(device_id: str) -> Optional[dict]:
+    """Obtiene un dispositivo por su ID."""
+    if db is None:
+        return None
+    
+    try:
+        collection = db["devices"]
+        device = collection.find_one({"_id": device_id})
+        if device:
+            device["id"] = device.get("_id", "")
+        return device
+    except Exception as e:
+        logger.error("Error obteniendo dispositivo: %s", e)
+        return None
+
+def get_all_devices(active_only: bool = True) -> list[dict]:
+    """Obtiene todos los dispositivos registrados."""
+    if db is None:
+        return []
+    
+    try:
+        collection = db["devices"]
+        query = {"active": True} if active_only else {}
+        devices = list(collection.find(query).sort("created_at", -1))
+        
+        for device in devices:
+            device["id"] = device.get("_id", "")
+        
+        return devices
+    except Exception as e:
+        logger.error("Error obteniendo dispositivos: %s", e)
+        return []
+
+def get_device_by_arduino_id(arduino_id: str) -> Optional[dict]:
+    """Obtiene un dispositivo por su Arduino ID."""
+    if db is None:
+        return None
+    
+    try:
+        collection = db["devices"]
+        device = collection.find_one({"arduino_id": arduino_id})
+        if device:
+            device["id"] = device.get("_id", "")
+        return device
+    except Exception as e:
+        logger.error("Error obteniendo dispositivo por arduino_id: %s", e)
+        return None
+
+def update_device(device_id: str, name: str | None = None, location: str | None = None, active: bool | None = None) -> Optional[dict]:
+    """Actualiza un dispositivo existente."""
+    if db is None:
+        return None
+    
+    try:
+        collection = db["devices"]
+        update_data = {"updated_at": utc_now()}
+        
+        if name is not None:
+            update_data["name"] = name
+        if location is not None:
+            update_data["location"] = location
+        if active is not None:
+            update_data["active"] = active
+        
+        result = collection.find_one_and_update(
+            {"_id": device_id},
+            {"$set": update_data},
+            return_document=True
+        )
+        
+        if result:
+            result["id"] = result.get("_id", "")
+            logger.info("Dispositivo actualizado: %s", device_id)
+        
+        return result
+    except Exception as e:
+        logger.error("Error actualizando dispositivo: %s", e)
+        return None
+
+def update_device_status(arduino_id: str, status: str, battery: int | None = None) -> Optional[dict]:
+    """Actualiza el estado y batería de un dispositivo basado en arduino_id."""
+    if db is None:
+        return None
+    
+    try:
+        collection = db["devices"]
+        update_data = {
+            "status": status,
+            "last_sync": utc_now(),
+            "updated_at": utc_now(),
+        }
+        
+        if battery is not None:
+            update_data["battery"] = max(0, min(100, battery))
+        
+        result = collection.find_one_and_update(
+            {"arduino_id": arduino_id},
+            {"$set": update_data},
+            return_document=True
+        )
+        
+        if result:
+            result["id"] = result.get("_id", "")
+        
+        return result
+    except Exception as e:
+        logger.error("Error actualizando estado del dispositivo: %s", e)
+        return None
+
+def register_new_microcontroller(arduino_id: str, device_name: str | None = None, device_type: str = "ESP8266", location: str = "") -> Optional[dict]:
+    """Registra un nuevo microcontrolador detectado automáticamente."""
+    if db is None:
+        return None
+    
+    try:
+        # Verificar si ya existe
+        existing = get_device_by_arduino_id(arduino_id)
+        if existing:
+            logger.info("Microcontrolador ya registrado: %s", arduino_id)
+            return existing
+        
+        # Crear nuevo dispositivo
+        name = device_name or f"Dispositivo {arduino_id}"
+        device = create_device(
+            name=name,
+            device_type=device_type,
+            location=location,
+            arduino_id=arduino_id
+        )
+        
+        if device:
+            logger.info("Nuevo microcontrolador registrado: %s", arduino_id)
+            log_service.log(
+                LogOrigin.DASHBOARD, LogLevel.INFO,
+                f"Nuevo microcontrolador detectado: {name} ({arduino_id})",
+                component="device.registration", details={"arduino_id": arduino_id, "device_type": device_type}
+            )
+        
+        return device
+    except Exception as e:
+        logger.error("Error registrando microcontrolador: %s", e)
+        return None
+
+def delete_device(device_id: str) -> bool:
+    """Elimina (desactiva) un dispositivo."""
+    if db is None:
+        return False
+    
+    try:
+        collection = db["devices"]
+        result = collection.update_one(
+            {"_id": device_id},
+            {"$set": {"active": False, "updated_at": utc_now()}}
+        )
+        
+        if result.modified_count > 0:
+            logger.info("Dispositivo eliminado: %s", device_id)
+            return True
+        return False
+    except Exception as e:
+        logger.error("Error eliminando dispositivo: %s", e)
+        return False

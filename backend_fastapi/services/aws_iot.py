@@ -186,7 +186,12 @@ class AwsIotService:
             )
 
     def _handle_message(self, topic: str, payload: bytes) -> None:
-        from services.mongodb import save_sensor_payload_to_mongodb, update_dashboard_state_from_mongodb
+        from services.mongodb import (
+            save_sensor_payload_to_mongodb,
+            update_dashboard_state_from_mongodb,
+            get_device_by_arduino_id,
+            register_new_microcontroller
+        )
 
         self._status.messages_received += 1
         self._status.last_message_at = datetime.now(timezone.utc)
@@ -203,6 +208,30 @@ class AwsIotService:
             self._status.last_error = "Payload sin mediciones completas"
             logger.warning("Payload IoT incompleto en %s: %s", topic, data)
             return
+
+        # 🔍 Detección automática de nuevos dispositivos por MQTT
+        existing_device = get_device_by_arduino_id(sensor_payload.arduino_id)
+        if not existing_device:
+            # Auto-registrar nuevo dispositivo detectado
+            device_name = data.get("nombre") or data.get("Nombre") or f"Dispositivo {sensor_payload.arduino_id}"
+            new_device = register_new_microcontroller(
+                arduino_id=sensor_payload.arduino_id,
+                device_name=device_name,
+                device_type="ESP8266",  # Por defecto ESP8266 para MQTT
+                location=""
+            )
+            if new_device:
+                logger.info(
+                    "🔔 Nuevo dispositivo auto-registrado por MQTT (arduino_id=%s, name=%s)",
+                    sensor_payload.arduino_id,
+                    device_name
+                )
+                log_service.log(
+                    LogOrigin.DASHBOARD, LogLevel.INFO,
+                    f"Nuevo dispositivo detectado automáticamente: {device_name}",
+                    component="aws_iot.auto_detect", operation="register_device",
+                    details={"arduino_id": sensor_payload.arduino_id}
+                )
 
         mongo_id = save_sensor_payload_to_mongodb(sensor_payload, source="aws_iot")
         if mongo_id:

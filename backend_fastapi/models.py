@@ -95,3 +95,49 @@ class AlertCreate(BaseModel):
     valor: float | None = None
     minimo: float | None = None
     maximo: float | None = None
+
+# ============================================================================
+# DISPOSITIVOS (MICROCONTROLADORES / ARDUINOS)
+# ============================================================================
+class Device(BaseModel):
+    id: str
+    name: str = Field(..., min_length=1, max_length=100)
+    device_type: Literal["ESP8266", "Arduino", "STM32", "other"] = "ESP8266"
+    location: str = Field(default="", max_length=200)
+    status: Literal["online", "offline", "unknown"] = "unknown"
+    arduino_id: str | None = None
+    battery: int = Field(default=100, ge=0, le=100)
+    last_sync: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    active: bool = True
+
+class DeviceCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100, description="Nombre del dispositivo")
+    device_type: Literal["ESP8266", "Arduino", "STM32", "other"] = Field(default="ESP8266", description="Tipo de microcontrolador")
+    location: str = Field(default="", max_length=200, description="Ubicación o zona del dispositivo")
+    arduino_id: str | None = Field(default=None, description="ID del Arduino (auto-detectado)")
+
+class DeviceUpdate(BaseModel):
+    name: str | None = Field(None, max_length=100)
+    location: str | None = Field(None, max_length=200)
+    active: bool | None = None
+
+class DeviceResponse(BaseModel):
+    id: str
+    name: str
+    device_type: str
+    location: str
+    status: str
+    battery: int
+    last_sync: datetime | None
+    created_at: datetime
+    updated_at: datetime
+    active: bool
+    arduino_id: str | None = None
+
+class DeviceDetectionPayload(BaseModel):
+    arduino_id: str
+    device_name: str | None = None
+    device_type: str = "ESP8266"
+    location: str | None = None
