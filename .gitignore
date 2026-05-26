@@ -41,18 +41,15 @@ backend_fastapi/.env.local
 **/credenciales*.md
 docs/CREDENCIALES_EQUIPO.md
 secrets/
-*.p12
-
-# AWS IoT Core — certificados del dispositivo (mantener solo README en repo)
-IotCore/*
-!IotCore/README.md
-
-# Backend — copia local de certificados para Docker
-backend_fastapi/certs/*
-!backend_fastapi/certs/README.md
-
-# Arduino — credenciales WiFi/MQTT (usar secrets.h.example si se documenta)
 SketchArduino/**/secrets.h
+SketchArduino/**/Secret.h
+
+# AWS IoT Core (IotCore/) — certificados del dispositivo
+IotCore/*-certificate.pem.crt
+IotCore/*-private.pem.key
+IotCore/*-public.pem.key
+IotCore/AmazonRootCA*.pem
+*.p12
 
 # Logs locales del backend (pueden contener datos de sesión)
 backend_fastapi/logs/
