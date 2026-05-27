@@ -3,7 +3,7 @@
     <header class="devices-header">
       <ThemeToggleButton />
       <div class="header-content">
-        <h1 class="header-title">Dispositivos Conectados</h1>
+        <h1 class="header-title"> QAwa - Dispositivos Conectados</h1>
         <p class="header-subtitle">Selecciona un Arduino para ver las mediciones en tiempo real</p>
       </div>
       
@@ -28,15 +28,6 @@
           <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
             <path d="M3 4h18v2H3V4zm0 7h18v2H3v-2zm0 7h18v2H3v-2z"/>
           </svg>
-        </button>
-
-        <button
-          v-if="isAdmin"
-          class="add-device-btn"
-          @click="$emit('add-device')"
-          title="Agregar nuevo dispositivo"
-        >
-          ➕ Nuevo Dispositivo
         </button>
 
         <button
@@ -76,6 +67,14 @@
     </header>
 
     <main class="devices-container">
+      <!-- Sección de Gestión de Dispositivos (arriba de la lista) -->
+      <AdminDevicesSection
+        v-if="isAdmin"
+        ref="adminSectionRef"
+        :is-admin="isAdmin"
+        :show-section="true"
+      />
+
       <div class="devices-grid" :class="`view-${viewMode}`">
         <DeviceCard
           v-for="device in devicesData"
@@ -102,6 +101,7 @@
 import { ref } from 'vue'
 import DeviceCard from './DeviceCard.vue'
 import ThemeToggleButton from './ThemeToggleButton.vue'
+import AdminDevicesSection from './AdminDevicesSection.vue'
 
 const viewMode = ref('grid')
 const selectedDeviceId = ref(null)
@@ -512,5 +512,12 @@ html[data-theme='dark'] .empty-icon {
 
 html[data-theme='dark'] .empty-text {
   color: #cbd5e1;
+}
+
+/* AdminDevicesSection within DeviceList */
+.devices-container :deep(.admin-buttons-container) {
+  padding: 20px 0;
+  background: transparent;
+  margin-bottom: 24px;
 }
 </style>

@@ -1,0 +1,28 @@
+# Docker Compose para desarrollo local - MongoDB SIN autenticación
+version: "3.9"
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: mongodb-arandanos
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    command: mongod
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 10s
+      retries: 6
+      start_period: 40s
+    networks:
+      - arandanos-network
+
+volumes:
+  mongodb_data:
+
+networks:
+  arandanos-network:
+    driver: bridge

@@ -10,6 +10,26 @@
       @logout="handleLogout"
       @add-device="openAddDeviceFromDeviceList"
     />
+
+    <!-- Modales de AdminDevicesSection -->
+    <AddDeviceModal
+      v-if="isAdmin"
+      :show="showAddModal"
+      title="Agregar Nuevo Dispositivo"
+      @close="closeAddModal"
+      @submit="handleAddDevice"
+    />
+
+    <DeviceDetectionModal
+      v-if="isAdmin"
+      :show="showDetectionModal"
+      :available-microcontrollers="availableMicrocontrollers"
+      :is-detecting="detectionInProgress"
+      :detection-message="detectionMessage"
+      @close="closeDetectionModal"
+      @detect="scanForNewDevices"
+      @register="registerDetectedDevice"
+    />
   </div>
 
   <div v-else-if="currentView === 'dashboard'" class="dashboard">
@@ -665,104 +685,6 @@
       </section>
     </main>
   </div>
-
-  <!-- Sección de Gestión de Dispositivos (siempre renderizada para acceso desde cualquier vista) -->
-  <AdminDevicesSection
-    v-if="isAdmin"
-    ref="devicesSectionRef"
-    :is-admin="isAdmin"
-    :show-section="currentView === 'dashboard'"
-    :trigger-open-modal="triggerOpenAddModal"
-  />
-
-  <!-- Modal Agregar Dispositivo (simple, para evitar problemas con AdminDevicesSection) -->
-  <div v-if="isAdmin && showAddDeviceModal" class="modal-overlay" @click.self="showAddDeviceModal = false">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3>Agregar Nuevo Dispositivo</h3>
-        <button class="close-btn" @click="showAddDeviceModal = false">×</button>
-      </div>
-
-      <div class="modal-body">
-        <form @submit.prevent="handleAddDeviceSubmit">
-          <!-- Nombre -->
-          <div class="form-group">
-            <label for="device-name">Nombre del Dispositivo *</label>
-            <input
-              id="device-name"
-              v-model.trim="addDeviceFormData.name"
-              type="text"
-              placeholder="Ej: Sensor Embalse Norte"
-              required
-              class="form-input"
-            />
-          </div>
-
-          <!-- Tipo de Dispositivo -->
-          <div class="form-group">
-            <label for="device-type">Tipo de Microcontrolador</label>
-            <select v-model="addDeviceFormData.device_type" id="device-type" class="form-select">
-              <option value="ESP8266">ESP8266 (WiFi)</option>
-              <option value="Arduino">Arduino</option>
-              <option value="STM32">STM32</option>
-              <option value="other">Otro</option>
-            </select>
-          </div>
-
-          <!-- Ubicación -->
-          <div class="form-group">
-            <label for="device-location">Ubicación (opcional)</label>
-            <input
-              id="device-location"
-              v-model.trim="addDeviceFormData.location"
-              type="text"
-              placeholder="Ej: Zona A - Profundidad 5m"
-              class="form-input"
-            />
-          </div>
-
-          <!-- Arduino ID (si aplica) -->
-          <div class="form-group">
-            <label for="arduino-id">Arduino ID (opcional)</label>
-            <input
-              id="arduino-id"
-              v-model.trim="addDeviceFormData.arduino_id"
-              type="text"
-              placeholder="Auto-detectado si se deja vacío"
-              class="form-input"
-            />
-            <small class="help-text">
-              Si tienes el ID del Arduino, colócalo aquí. De lo contrario, se asignará automáticamente.
-            </small>
-          </div>
-
-          <!-- Botones -->
-          <div class="form-actions">
-            <button
-              type="button"
-              class="btn btn-secondary"
-              @click="showAddDeviceModal = false"
-              :disabled="isSubmittingDevice"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              class="btn btn-primary"
-              :disabled="!addDeviceFormData.name || isSubmittingDevice"
-            >
-              {{ isSubmittingDevice ? 'Guardando...' : 'Agregar Dispositivo' }}
-            </button>
-          </div>
-        </form>
-
-        <!-- Mensaje de Error -->
-        <div v-if="addDeviceError" class="alert alert-error">
-          {{ addDeviceError }}
-        </div>
-      </div>
-    </div>
-  </div>
 </template>
 
 <script setup>
@@ -880,16 +802,6 @@ const currentView = ref('devices')
 const previousView = ref(null)
 const selectedDeviceId = ref(null)
 const devicesSectionRef = ref(null)
-const triggerOpenAddModal = ref(false)
-const showAddDeviceModal = ref(false)
-const addDeviceFormData = ref({
-  name: '',
-  device_type: 'ESP8266',
-  location: '',
-  arduino_id: ''
-})
-const addDeviceError = ref('')
-const isSubmittingDevice = ref(false)
 const lastSync = ref('Sin datos del Arduino')
 const showAllTodayAlerts = ref(false)
 
@@ -908,8 +820,6 @@ const enforceAdminOnlyViews = () => {
     if (ADMIN_ONLY_VIEWS.has(currentView.value)) {
       currentView.value = 'devices'
     }
-    showAddDeviceModal.value = false
-    triggerOpenAddModal.value = false
   }
 }
 
@@ -1333,64 +1243,15 @@ const goBack = () => {
 
 const openAddDeviceFromHeader = () => {
   if (!isAdmin.value) return
-  // Llamar el método openAddModal del componente AdminDevicesSection
   if (devicesSectionRef.value) {
     devicesSectionRef.value.openAddModal()
   }
 }
 
 const openAddDeviceFromDeviceList = () => {
-  console.log('🔘 openAddDeviceFromDeviceList called')
-  console.log('isAdmin:', isAdmin.value)
-  
-  if (!isAdmin.value) {
-    console.log('❌ Usuario no es admin')
-    return
-  }
-  
-  console.log('✅ Abriendo modal')
-  showAddDeviceModal.value = true
-}
-
-const handleAddDeviceSubmit = async () => {
-  if (!addDeviceFormData.value.name) return
-  
-  isSubmittingDevice.value = true
-  addDeviceError.value = ''
-  
-  try {
-    console.log('Enviando datos del dispositivo:', addDeviceFormData.value)
-    
-    const response = await fetch(`${API_BASE_URL}/api/devices`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('sessionToken')}`
-      },
-      body: JSON.stringify({
-        name: addDeviceFormData.value.name,
-        device_type: addDeviceFormData.value.device_type,
-        location: addDeviceFormData.value.location || null,
-        arduino_id: addDeviceFormData.value.arduino_id || null
-      })
-    })
-    
-    if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.detail || `Error ${response.status}`)
-    }
-    
-    console.log('✅ Dispositivo creado exitosamente')
-    showAddDeviceModal.value = false
-    addDeviceFormData.value = { name: '', device_type: 'ESP8266', location: '', arduino_id: '' }
-    
-    // Recargar dispositivos
-    // await deviceStore.fetchDevices(API_BASE_URL)
-  } catch (error) {
-    addDeviceError.value = `Error: ${error.message}`
-    console.error('Error al agregar dispositivo:', error)
-  } finally {
-    isSubmittingDevice.value = false
+  if (!isAdmin.value) return
+  if (devicesSectionRef.value) {
+    devicesSectionRef.value.openAddModal()
   }
 }
 

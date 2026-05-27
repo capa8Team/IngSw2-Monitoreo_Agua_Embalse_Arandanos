@@ -5,7 +5,7 @@
     </div>
     <div class="login-box">
       <div class="login-header">
-        <h1>Monitoreo Embalse</h1>
+        <h1> QAwa</h1>
         <p>Sistema de Monitoreo de Agua</p>
       </div>
 

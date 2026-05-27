@@ -3,7 +3,7 @@
     <!-- Header -->
     <header class="dashboard-header">
       <div class="header-left">
-        <h1>🌊 Dashboard - Monitoreo Embalse</h1>
+        <h1> QAwa - Dashboard</h1>
       </div>
       <div class="header-right">
         <button 

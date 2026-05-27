@@ -59,6 +59,22 @@
             </small>
           </div>
 
+          <!-- Topic MQTT -->
+          <div class="form-group">
+            <label for="device-topic">Topic MQTT *</label>
+            <input
+              id="device-topic"
+              v-model.trim="formData.topic"
+              type="text"
+              placeholder="Ej: boya/sensores o home/sala/temperatura"
+              required
+              class="form-input"
+            />
+            <small class="help-text">
+              Topic MQTT para recibir datos del dispositivo (requerido)
+            </small>
+          </div>
+
           <!-- Botones -->
           <div class="form-actions">
             <button
@@ -116,7 +132,8 @@ const formData = ref({
   name: '',
   device_type: 'ESP8266',
   location: '',
-  arduino_id: ''
+  arduino_id: '',
+  topic: ''
 })
 
 const isSubmitting = ref(false)
@@ -128,7 +145,8 @@ const showModal = computed({
 })
 
 const isFormValid = computed(() => {
-  return formData.value.name && formData.value.name.length > 0
+  return formData.value.name && formData.value.name.length > 0 && 
+         formData.value.topic && formData.value.topic.length > 0
 })
 
 const closeModal = () => {
@@ -143,7 +161,8 @@ const resetForm = () => {
     name: '',
     device_type: 'ESP8266',
     location: '',
-    arduino_id: ''
+    arduino_id: '',
+    topic: ''
   }
   errorMessage.value = ''
 }
@@ -204,7 +223,7 @@ watch(
 }
 
 .modal-content {
-  background: white;
+  background: #1f2937;
   border-radius: 8px;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
   max-width: 500px;
@@ -230,7 +249,7 @@ watch(
   justify-content: space-between;
   align-items: center;
   padding: 20px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid #374151;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
 }
@@ -273,7 +292,7 @@ watch(
   display: block;
   margin-bottom: 6px;
   font-weight: 500;
-  color: #374151;
+  color: #e5e7eb;
   font-size: 0.95rem;
 }
 
@@ -281,24 +300,26 @@ watch(
 .form-select {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid #d1d5db;
+  border: 1px solid #4b5563;
   border-radius: 6px;
   font-size: 1rem;
   font-family: inherit;
   transition: border-color 0.2s, box-shadow 0.2s;
+  background-color: #374151;
+  color: #f3f4f6;
 }
 
 .form-input:focus,
 .form-select:focus {
   outline: none;
   border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
 }
 
 .help-text {
   display: block;
   margin-top: 4px;
-  color: #6b7280;
+  color: #9ca3af;
   font-size: 0.85rem;
 }
 
@@ -339,12 +360,12 @@ watch(
 }
 
 .btn-secondary {
-  background: #e5e7eb;
-  color: #374151;
+  background: #4b5563;
+  color: #e5e7eb;
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: #d1d5db;
+  background: #5a6575;
 }
 
 .btn-secondary:disabled {
@@ -372,8 +393,8 @@ watch(
 }
 
 .alert-error {
-  background: #fee;
-  color: #c33;
-  border: 1px solid #f99;
+  background: #7f1d1d;
+  color: #fecaca;
+  border: 1px solid #dc2626;
 }
 </style>
