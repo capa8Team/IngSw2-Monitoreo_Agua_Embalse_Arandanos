@@ -149,7 +149,6 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useDeviceStore } from '../stores/deviceStore'
-import { useAuthStore } from '../stores/authStore'
 import AddDeviceModal from './AddDeviceModal.vue'
 import DeviceDetectionModal from './DeviceDetectionModal.vue'
 
@@ -161,14 +160,17 @@ const props = defineProps({
   triggerOpenModal: {
     type: Boolean,
     default: false
+  },
+  isAdmin: {
+    type: Boolean,
+    default: false
   }
 })
 
 const deviceStore = useDeviceStore()
-const authStore = useAuthStore()
 
 // Propiedades computadas
-const isAdmin = computed(() => authStore.user?.role === 'administrador')
+const isAdmin = computed(() => props.isAdmin)
 const loading = computed(() => deviceStore.loading)
 const deviceCount = computed(() => deviceStore.deviceCount)
 const activeDeviceCount = computed(() => deviceStore.activeDeviceCount)

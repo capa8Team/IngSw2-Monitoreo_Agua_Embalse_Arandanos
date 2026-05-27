@@ -1,5 +1,12 @@
 import logging
 import asyncio
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Cargar .env de la raíz del repo antes de settings/routers (VITE_SUPABASE_*, SUPABASE_DB_URL, etc.)
+load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -23,6 +30,7 @@ from services.telegram import initialize_telegram, TelegramService
 from services.aws_iot import aws_iot_service
 from routers.logs_router import router as logs_router
 from routers.auth_jwt import router as auth_jwt_router
+from routers.admin_activity import router as admin_activity_router
 
 logger = logging.getLogger(__name__)
 API_PATH_PREFIX = "/api/"
@@ -47,6 +55,7 @@ app.add_middleware(CorrelationIdMiddleware)
 # Registro de Routers
 app.include_router(auth_jwt_router, prefix="/api/auth", tags=["auth"])
 app.include_router(logs_router)
+app.include_router(admin_activity_router)
 app.include_router(sensors_router)
 app.include_router(alerts_router)
 app.include_router(devices_router)

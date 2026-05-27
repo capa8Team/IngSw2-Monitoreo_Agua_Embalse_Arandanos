@@ -49,6 +49,15 @@
         </button>
 
         <button
+          v-if="isAdmin"
+          class="admin-btn"
+          @click="$emit('open-account-activity')"
+          title="Monitoreo de actividad de cuentas"
+        >
+          Actividad de cuentas
+        </button>
+
+        <button
           class="history-btn"
           @click="$emit('open-history')"
           title="Abrir registro histórico"
@@ -113,7 +122,7 @@ const selectDevice = (device) => {
   emit('select-device', device)
 }
 
-const emit = defineEmits(['select-device', 'open-history', 'open-user-management', 'logout', 'add-device'])
+const emit = defineEmits(['select-device', 'open-history', 'open-user-management', 'open-account-activity', 'logout', 'add-device'])
 </script>
 
 <style scoped>
