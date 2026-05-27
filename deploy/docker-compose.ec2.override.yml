@@ -1,0 +1,16 @@
+# Override de producción para EC2.
+# Uso (desde la raíz del repo):
+#   docker compose -f docker-compose.yml -f deploy/docker-compose.ec2.override.yml up -d --build
+#
+# - Frontend en puerto 80 (HTTP público)
+# - MongoDB y API no se publican en el host (solo red interna Docker)
+
+services:
+  mongodb:
+    ports: !reset []
+
+  backend:
+    ports: !reset []
+
+  frontend:
+    ports: !reset ["80:8000"]

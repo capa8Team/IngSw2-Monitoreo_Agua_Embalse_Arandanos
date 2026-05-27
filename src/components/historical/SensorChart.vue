@@ -3,6 +3,7 @@
     <div class="chart-title">
       <h3>{{ title }}</h3>
       <div class="period-buttons">
+        <button class="period-btn" :class="{ active: period === 'hour' }" @click="$emit('update:period', 'hour')">1 hora</button>
         <button class="period-btn" :class="{ active: period === 'day' }" @click="$emit('update:period', 'day')">1 día</button>
         <button class="period-btn" :class="{ active: period === 'week' }" @click="$emit('update:period', 'week')">1 semana</button>
       </div>
@@ -61,11 +62,12 @@ function buildChart() {
         borderWidth: 2.5,
         fill: true,
         tension: 0.3,
+        spanGaps: false,
         pointBackgroundColor: '#66bb6a',
         pointBorderColor:     '#fff',
         pointBorderWidth: 2,
-        pointRadius:      3,
-        pointHoverRadius: 5,
+        pointRadius:      props.chartData.values.length <= 12 ? 5 : 3,
+        pointHoverRadius: props.chartData.values.length <= 12 ? 7 : 5,
       }],
     },
     options: {
@@ -90,7 +92,17 @@ function buildChart() {
           grid:  { color: theme.grid },
           title: { display: true, text: meta.value.label, font: { size: 11, weight: 'bold' }, color: theme.axisTitle },
         },
-        x: { ticks: { color: theme.tick, font: { size: 10 } }, grid: { display: false } },
+        x: {
+          ticks: {
+            color: theme.tick,
+            font: { size: 10 },
+            maxRotation: 45,
+            minRotation: 0,
+            autoSkip: true,
+            maxTicksLimit: props.chartData.labels.length > 12 ? 12 : undefined,
+          },
+          grid: { display: false },
+        },
       },
     },
   })
@@ -98,8 +110,11 @@ function buildChart() {
 
 function syncChartData() {
   if (!chartInstance) { buildChart(); return }
-  chartInstance.data.labels             = props.chartData.labels
-  chartInstance.data.datasets[0].data   = props.chartData.values
+  const n = props.chartData.values.length
+  chartInstance.data.labels = props.chartData.labels
+  chartInstance.data.datasets[0].data = props.chartData.values
+  chartInstance.data.datasets[0].pointRadius = n <= 12 ? 5 : 3
+  chartInstance.data.datasets[0].pointHoverRadius = n <= 12 ? 7 : 5
   chartInstance.update('none')
 }
 
@@ -161,8 +176,9 @@ onBeforeUnmount(() => {
 }
 
 .period-btn {
-  padding: 6px 10px;
+  padding: 6px 8px;
   min-height: 36px;
+  white-space: nowrap;
   background: #f0f0f0;
   border: 1px solid #ddd;
   border-radius: 4px;

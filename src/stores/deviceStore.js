@@ -36,7 +36,9 @@ export const useDeviceStore = defineStore('device', () => {
       }
       
       const data = await response.json()
-      devices.value = Array.isArray(data) ? data : []
+      devices.value = Array.isArray(data)
+        ? data.filter((d) => d.active !== false)
+        : []
       
       return devices.value
     } catch (err) {

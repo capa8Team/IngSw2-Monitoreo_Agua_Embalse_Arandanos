@@ -82,7 +82,10 @@
           :key="device.id"
           :device="device"
           :is-selected="selectedDeviceId === device.id"
+          :can-delete="isAdmin"
+          :deleting="deletingDeviceId === device.id"
           @select="selectDevice(device)"
+          @delete="handleDeleteDevice"
         />
       </div>
 
@@ -103,9 +106,13 @@ import { ref } from 'vue'
 import DeviceCard from './DeviceCard.vue'
 import ThemeToggleButton from './ThemeToggleButton.vue'
 import AdminDevicesSection from './AdminDevicesSection.vue'
+import { useDeviceStore } from '../stores/deviceStore'
 
 const viewMode = ref('grid')
 const selectedDeviceId = ref(null)
+const deletingDeviceId = ref(null)
+const deviceStore = useDeviceStore()
+
 const props = defineProps({
   devicesData: {
     type: Array,
@@ -119,8 +126,28 @@ const props = defineProps({
 
 const selectDevice = (device) => {
   selectedDeviceId.value = device.id
-  // Emitir evento al componente padre para cambiar a la vista del dashboard
   emit('select-device', device)
+}
+
+const handleDeleteDevice = async (device) => {
+  const label = device?.name || 'este dispositivo'
+  if (!confirm(`¿Eliminar "${label}"?\n\nDejará de mostrarse en el panel. Si sigue enviando datos por MQTT, podría volver a registrarse automáticamente.`)) {
+    return
+  }
+
+  deletingDeviceId.value = device.id
+  try {
+    await deviceStore.deleteDevice(device.id)
+    if (selectedDeviceId.value === device.id) {
+      selectedDeviceId.value = null
+    }
+    emit('devices-changed')
+  } catch (error) {
+    console.error('Error eliminando dispositivo:', error)
+    alert(error?.message || 'No se pudo eliminar el dispositivo')
+  } finally {
+    deletingDeviceId.value = null
+  }
 }
 
 const emit = defineEmits([

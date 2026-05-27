@@ -51,6 +51,7 @@ async def create_new_device(payload: DeviceCreate) -> DeviceResponse:
         location=payload.location,
         arduino_id=payload.arduino_id,
         topic=payload.topic,
+        telemetry_key=payload.telemetry_key,
     )
     
     if not device:
@@ -88,7 +89,10 @@ async def update_device_info(device_id: str, payload: DeviceUpdate) -> DeviceRes
         device_id=device_id,
         name=payload.name,
         location=payload.location,
-        active=payload.active
+        active=payload.active,
+        arduino_id=payload.arduino_id,
+        telemetry_key=payload.telemetry_key,
+        topic=payload.topic,
     )
     
     if not device:
@@ -207,16 +211,23 @@ async def get_available_microcontrollers():
         sensor_collection = db["sensor_readings"]
         available = sensor_collection.distinct("arduino_id")
         
-        # Filtrar solo aquellos que no están registrados como dispositivo
+        # Solo dispositivos activos cuentan como registrados
         device_collection = db["devices"]
-        registered_ids = device_collection.distinct("arduino_id")
-        
-        new_ids = [aid for aid in available if aid and aid not in registered_ids]
+        registered_keys: set[str] = set()
+        for doc in device_collection.find(
+            {"active": {"$ne": False}},
+            {"arduino_id": 1, "name": 1, "telemetry_key": 1, "topic": 1},
+        ):
+            for field in ("arduino_id", "name", "telemetry_key"):
+                if doc.get(field):
+                    registered_keys.add(doc[field])
+
+        new_ids = [aid for aid in available if aid and aid not in registered_keys]
         
         return {
             "available": new_ids,
             "total": len(new_ids),
-            "already_registered": registered_ids,
+            "already_registered": sorted(registered_keys),
             "message": f"{len(new_ids)} microcontrolador(es) disponible(s) para registrar"
         }
     except Exception as e:

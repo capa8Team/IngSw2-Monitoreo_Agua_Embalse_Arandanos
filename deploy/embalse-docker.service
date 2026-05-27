@@ -1,0 +1,15 @@
+[Unit]
+Description=Monitoreo Embalse Arandanos (Docker Compose)
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/embalse-arandanos
+ExecStart=/usr/bin/docker compose -f docker-compose.yml -f deploy/docker-compose.ec2.override.yml up -d
+ExecStop=/usr/bin/docker compose -f docker-compose.yml -f deploy/docker-compose.ec2.override.yml down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

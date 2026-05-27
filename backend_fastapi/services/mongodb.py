@@ -207,7 +207,7 @@ def build_payload_from_ph_post(reading: SensorPhPostReading) -> SensorMongoPaylo
     conductivity = float(reading.conductivity) if reading.conductivity is not None else float(latest.get("conductivity", 0.0))
 
     return SensorMongoPayload(
-        arduino_id=f"{reading.sensor_id}-{reading.id_env}",
+        arduino_id=str(reading.sensor_id).strip(),
         timestamp=reading.timestamp,
         mediciones=SensorMeasurements(
             ph=float(reading.ph), temperatura=temperature, conductividad=conductivity,
@@ -225,6 +225,7 @@ def create_device(
     location: str,
     arduino_id: str | None = None,
     topic: str | None = None,
+    telemetry_key: str | None = None,
 ) -> Optional[dict]:
     """Crea un nuevo dispositivo en la base de datos."""
     if db is None:
@@ -245,6 +246,7 @@ def create_device(
             "location": location,
             "status": "unknown",
             "arduino_id": arduino_id,
+            "telemetry_key": telemetry_key,
             "topic": topic,
             "battery": 100,
             "last_sync": None,
@@ -275,6 +277,41 @@ def get_device(device_id: str) -> Optional[dict]:
         logger.error("Error obteniendo dispositivo: %s", e)
         return None
 
+def _active_device_filter() -> dict:
+    """Incluye activos y registros legacy sin campo ``active``; excluye ``active: false``."""
+    return {"active": {"$ne": False}}
+
+
+def find_device_by_key(key: str, *, include_inactive: bool = False) -> Optional[dict]:
+    """Busca dispositivo por ``arduino_id`` o ``name``."""
+    if db is None:
+        return None
+
+    device_key = str(key).strip()
+    if not device_key:
+        return None
+
+    try:
+        query: dict = {
+            "$or": [
+                {"arduino_id": device_key},
+                {"name": device_key},
+                {"telemetry_key": device_key},
+            ]
+        }
+        if not include_inactive:
+            query = {"$and": [query, _active_device_filter()]}
+
+        collection = db["devices"]
+        device = collection.find_one(query)
+        if device:
+            device["id"] = device.get("_id", "")
+        return device
+    except Exception as e:
+        logger.error("Error buscando dispositivo por clave: %s", e)
+        return None
+
+
 def get_all_devices(active_only: bool = True) -> list[dict]:
     """Obtiene todos los dispositivos registrados."""
     if db is None:
@@ -282,7 +319,7 @@ def get_all_devices(active_only: bool = True) -> list[dict]:
     
     try:
         collection = db["devices"]
-        query = {"active": True} if active_only else {}
+        query = _active_device_filter() if active_only else {}
         devices = list(collection.find(query).sort("created_at", -1))
         
         for device in devices:
@@ -294,21 +331,18 @@ def get_all_devices(active_only: bool = True) -> list[dict]:
         return []
 
 def get_device_by_arduino_id(arduino_id: str) -> Optional[dict]:
-    """Obtiene un dispositivo por su Arduino ID."""
-    if db is None:
-        return None
-    
-    try:
-        collection = db["devices"]
-        device = collection.find_one({"arduino_id": arduino_id})
-        if device:
-            device["id"] = device.get("_id", "")
-        return device
-    except Exception as e:
-        logger.error("Error obteniendo dispositivo por arduino_id: %s", e)
-        return None
+    """Obtiene un dispositivo activo por nombre/clave MQTT o arduino_id."""
+    return find_device_by_key(arduino_id, include_inactive=False)
 
-def update_device(device_id: str, name: str | None = None, location: str | None = None, active: bool | None = None) -> Optional[dict]:
+def update_device(
+    device_id: str,
+    name: str | None = None,
+    location: str | None = None,
+    active: bool | None = None,
+    arduino_id: str | None = None,
+    telemetry_key: str | None = None,
+    topic: str | None = None,
+) -> Optional[dict]:
     """Actualiza un dispositivo existente."""
     if db is None:
         return None
@@ -323,6 +357,12 @@ def update_device(device_id: str, name: str | None = None, location: str | None 
             update_data["location"] = location
         if active is not None:
             update_data["active"] = active
+        if arduino_id is not None:
+            update_data["arduino_id"] = arduino_id
+        if telemetry_key is not None:
+            update_data["telemetry_key"] = telemetry_key
+        if topic is not None:
+            update_data["topic"] = topic
         
         result = collection.find_one_and_update(
             {"_id": device_id},
@@ -355,8 +395,20 @@ def update_device_status(arduino_id: str, status: str, battery: int | None = Non
         if battery is not None:
             update_data["battery"] = max(0, min(100, battery))
         
+        key = str(arduino_id).strip()
         result = collection.find_one_and_update(
-            {"arduino_id": arduino_id},
+            {
+                "$and": [
+                    {
+                        "$or": [
+                            {"arduino_id": key},
+                            {"name": key},
+                            {"telemetry_key": key},
+                        ]
+                    },
+                    _active_device_filter(),
+                ]
+            },
             {"$set": update_data},
             return_document=True
         )
@@ -375,19 +427,24 @@ def register_new_microcontroller(arduino_id: str, device_name: str | None = None
         return None
     
     try:
-        # Verificar si ya existe
-        existing = get_device_by_arduino_id(arduino_id)
-        if existing:
-            logger.info("Microcontrolador ya registrado: %s", arduino_id)
-            return existing
-        
-        # Crear nuevo dispositivo
-        name = device_name or f"Dispositivo {arduino_id}"
+        key = str(arduino_id).strip()
+        existing_any = find_device_by_key(key, include_inactive=True)
+        if existing_any:
+            if existing_any.get("active") is False:
+                logger.info(
+                    "Microcontrolador eliminado; no se re-registra automáticamente: %s",
+                    key,
+                )
+                return None
+            logger.info("Microcontrolador ya registrado: %s", key)
+            return existing_any
+
+        name = (device_name or key).strip()
         device = create_device(
             name=name,
             device_type=device_type,
             location=location,
-            arduino_id=arduino_id
+            arduino_id=key,
         )
         
         if device:
@@ -410,12 +467,13 @@ def delete_device(device_id: str) -> bool:
     
     try:
         collection = db["devices"]
-        result = collection.update_one(
-            {"_id": device_id},
-            {"$set": {"active": False, "updated_at": utc_now()}}
-        )
-        
-        if result.modified_count > 0:
+        update = {"$set": {"active": False, "updated_at": utc_now()}}
+        result = collection.update_one({"_id": device_id}, update)
+
+        if result.matched_count == 0:
+            result = collection.update_one({"id": device_id}, update)
+
+        if result.matched_count > 0:
             logger.info("Dispositivo eliminado: %s", device_id)
             return True
         return False

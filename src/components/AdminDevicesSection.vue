@@ -95,6 +95,7 @@ const handleAddDevice = async (deviceData) => {
       device_type: deviceData.device_type,
       location: deviceData.location || '',
       arduino_id: deviceData.arduino_id || null,
+      telemetry_key: deviceData.telemetry_key || null,
       topic: deviceData.topic || null,
     })
     closeAddModal()

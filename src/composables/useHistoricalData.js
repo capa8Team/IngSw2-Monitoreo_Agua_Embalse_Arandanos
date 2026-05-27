@@ -1,10 +1,18 @@
 import { ref, reactive, computed, watch } from 'vue'
-import { SENSOR_META, flattenMeasurements } from '../utils/sensorUtils.js'
-import { fetchSensorReadings, fetchDashboardSnapshot } from '../services/historicalDataService.js'
+import {
+  flattenMeasurements,
+  buildChartSeriesFromReadings,
+  computeChartStats,
+  expandReadingsForRegisteredDevices,
+  readingsForCharts,
+} from '../utils/sensorUtils.js'
+import { fetchSensorReadings, fetchActiveDevices } from '../services/historicalDataService.js'
 
 export function useHistoricalData() {
   const normalizedReadings = ref([])
-  const measurementRows    = ref([])
+  const chartSourceReadings  = ref([])
+  const measurementRows      = ref([])
+  const registeredDevices    = ref([])
 
   const phPeriod   = ref('day')
   const tempPeriod = ref('day')
@@ -22,50 +30,32 @@ export function useHistoricalData() {
     conductivity: { labels: [], values: [] },
   })
 
+  /** Nombres en pantalla (Norte, Dispositivo 1, …) para el PDF. */
   const deviceOptions = computed(() =>
-    [...new Set(normalizedReadings.value.map(r => r.device))].sort((a, b) => a.localeCompare(b))
+    registeredDevices.value
+      .map((d) => String(d.name || '').trim())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b, 'es'))
   )
+
+  async function loadRegisteredDevices() {
+    registeredDevices.value = await fetchActiveDevices()
+  }
 
   async function loadTableData() {
     const records = await fetchSensorReadings()
-    normalizedReadings.value = records.sort((a, b) => b.timestamp - a.timestamp)
+    const sorted = records.sort((a, b) => b.timestamp - a.timestamp)
+    const registered = registeredDevices.value
+
+    chartSourceReadings.value = readingsForCharts(sorted, registered)
+    normalizedReadings.value = expandReadingsForRegisteredDevices(sorted, registered)
     measurementRows.value = flattenMeasurements(normalizedReadings.value)
   }
 
-  async function loadChartData(sensorKey, period) {
-    const meta = SENSOR_META[sensorKey]
-    let baseValue = (meta.min + meta.max) / 2
-
-    try {
-      const snap = await fetchDashboardSnapshot()
-      baseValue = snap[sensorKey]?.value ?? baseValue
-    } catch { /* use midpoint default */ }
-
-    const count    = period === 'day' ? 24 : 7
-    const variance = (meta.max - meta.min) * 0.05
-    const now      = new Date()
-    const labels   = []
-    const values   = []
-
-    for (let i = 0; i < count; i++) {
-      const d = new Date(now)
-      if (period === 'day') {
-        d.setHours(i, 0, 0, 0)
-        labels.push(`${String(i).padStart(2, '0')}:00`)
-      } else {
-        d.setDate(d.getDate() - (count - 1 - i))
-        labels.push(d.toLocaleDateString('es-ES', { weekday: 'short' }))
-      }
-      const v = baseValue + (Math.random() - 0.5) * variance
-      values.push(Math.max(meta.min, Math.min(meta.max, v)))
-    }
-
-    chartData[sensorKey] = { labels, values }
-    chartStats[sensorKey] = {
-      max: Math.max(...values),
-      min: Math.min(...values),
-      avg: values.reduce((a, b) => a + b, 0) / values.length,
-    }
+  function loadChartData(sensorKey, period) {
+    const series = buildChartSeriesFromReadings(chartSourceReadings.value, sensorKey, period)
+    chartData[sensorKey] = series
+    chartStats[sensorKey] = computeChartStats(series.values, sensorKey)
   }
 
   async function loadAllChartData() {
@@ -76,28 +66,32 @@ export function useHistoricalData() {
     ])
   }
 
+  async function refreshHistorical() {
+    await loadRegisteredDevices()
+    await loadTableData()
+    await loadAllChartData()
+  }
+
   watch(phPeriod,   p => loadChartData('ph', p))
   watch(tempPeriod, p => loadChartData('temperature', p))
   watch(condPeriod, p => loadChartData('conductivity', p))
 
-  let chartTimer = null
-  let tableTimer = null
+  let refreshTimer = null
 
   function startPolling() {
-    chartTimer = setInterval(() => loadAllChartData().catch(console.error), 5000)
-    tableTimer = setInterval(() => loadTableData().catch(console.error), 30000)
+    refreshTimer = setInterval(() => refreshHistorical().catch(console.error), 5000)
   }
 
   function stopPolling() {
-    clearInterval(chartTimer)
-    clearInterval(tableTimer)
+    clearInterval(refreshTimer)
   }
 
   return {
-    normalizedReadings, measurementRows, deviceOptions,
+    normalizedReadings, chartSourceReadings, measurementRows,
+    deviceOptions, registeredDevices,
     phPeriod, tempPeriod, condPeriod,
     chartData, chartStats,
-    loadTableData, loadAllChartData, loadChartData,
+    loadTableData, loadAllChartData, loadChartData, refreshHistorical,
     startPolling, stopPolling,
   }
 }

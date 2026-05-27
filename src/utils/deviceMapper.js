@@ -1,3 +1,5 @@
+import { getDeviceTelemetryKeys } from './sensorUtils.js'
+
 /**
  * Convierte dispositivos del API (MongoDB) al formato usado por DeviceCard / DeviceDashboard.
  */
@@ -28,6 +30,8 @@ export function mapApiDeviceToCard(apiDevice, { dataSource = 'real' } = {}) {
     device_type: deviceType,
     location: apiDevice.location || '',
     arduino_id: apiDevice.arduino_id || null,
+    telemetry_key: apiDevice.telemetry_key || null,
+    telemetryQueryKey: getDeviceTelemetryKeys(apiDevice)[0] || null,
     topic: apiDevice.topic || null,
     status: mapApiStatusToCard(apiDevice.status),
     lastUpdate: apiDevice.last_sync ? formatRelativeSync(apiDevice.last_sync) : 'Sin datos',

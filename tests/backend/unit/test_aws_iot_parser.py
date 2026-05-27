@@ -18,12 +18,26 @@ def test_parse_boya_sensores_payload():
     result = parse_iot_telemetry(payload, "boya/sensores")
 
     assert result is not None
-    assert result.arduino_id == "BoyaArandanos-7"
+    assert result.arduino_id == "BoyaArandanos"
     assert result.mediciones.ph == 7.15
     assert result.mediciones.temperatura == 21.3
     assert result.mediciones.conductividad == 512.0
     assert result.bateria == 92
     assert result.timestamp == 1716650000
+
+
+def test_parse_uses_nombre_only_ignoring_id_env_counter():
+    base = {
+        "nombre": "Dispositivo 1",
+        "pH": 7.0,
+        "temperatura": 20.0,
+        "EC": 400.0,
+    }
+    first = parse_iot_telemetry({**base, "id_env": 1}, "boya/sensores")
+    second = parse_iot_telemetry({**base, "id_env": 99}, "boya/sensores")
+
+    assert first is not None and second is not None
+    assert first.arduino_id == second.arduino_id == "Dispositivo 1"
 
 
 def test_parse_rejects_incomplete_payload():

@@ -863,10 +863,12 @@ const devices = computed(() => {
     return []
   }
 
-  return apiList.map((apiDevice) => {
-    const card = mapApiDeviceToCard(apiDevice, { dataSource })
-    return mergeCardWithTelemetry(card, telemetryByDeviceId.value[card.id])
-  })
+  return apiList
+    .filter((apiDevice) => apiDevice.active !== false)
+    .map((apiDevice) => {
+      const card = mapApiDeviceToCard(apiDevice, { dataSource })
+      return mergeCardWithTelemetry(card, telemetryByDeviceId.value[card.id])
+    })
 })
 
 const loadDevices = async () => {
@@ -1136,7 +1138,7 @@ const loadDashboardFromApi = async () => {
   if (!deviceId) return
 
   const active = devices.value.find((d) => d.id === deviceId)
-  const arduinoId = active?.arduino_id || null
+  const arduinoId = active?.telemetryQueryKey || active?.telemetry_key || active?.arduino_id || null
   const dashboard = await fetchDashboardData(
     arduinoId
       ? `${API_BASE_URL}/api/dashboard?arduino_id=${encodeURIComponent(arduinoId)}`

@@ -43,13 +43,13 @@ const {
   measurementRows, deviceOptions,
   phPeriod, tempPeriod, condPeriod,
   chartData, chartStats,
-  loadTableData, loadAllChartData,
+  refreshHistorical,
   startPolling, stopPolling,
 } = useHistoricalData()
 
 onMounted(async () => {
   await nextTick()
-  await Promise.all([loadAllChartData(), loadTableData()])
+  await refreshHistorical()
   startPolling()
 })
 

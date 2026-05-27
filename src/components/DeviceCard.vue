@@ -35,6 +35,16 @@
 
     <div class="device-footer">
       <p class="last-update">Última actualización: {{ device.lastUpdate }}</p>
+      <button
+        v-if="canDelete"
+        type="button"
+        class="delete-device-btn"
+        title="Eliminar dispositivo"
+        :disabled="deleting"
+        @click.stop="$emit('delete', device)"
+      >
+        {{ deleting ? '…' : 'Eliminar' }}
+      </button>
     </div>
   </div>
 </template>
@@ -51,10 +61,18 @@ const props = defineProps({
   isSelected: {
     type: Boolean,
     default: false
+  },
+  canDelete: {
+    type: Boolean,
+    default: false
+  },
+  deleting: {
+    type: Boolean,
+    default: false
   }
 })
 
-defineEmits(['select'])
+defineEmits(['select', 'delete'])
 
 const formatSensorValue = (value) => {
   const parsed = Number(value)
@@ -145,6 +163,29 @@ const normalizedSensors = computed(() => {
   flex-shrink: 0;
 }
 
+.delete-device-btn {
+  flex-shrink: 0;
+  border: 1px solid #ef9a9a;
+  background: #fff;
+  color: #c62828;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.delete-device-btn:hover:not(:disabled) {
+  background: #ffebee;
+  border-color: #e57373;
+}
+
+.delete-device-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .device-battery {
   flex-shrink: 0;
   display: flex;
@@ -205,12 +246,20 @@ const normalizedSensors = computed(() => {
 }
 
 .device-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   font-size: 12px;
   color: #999;
 }
 
 .last-update {
+  flex: 1;
+  min-width: 0;
   margin: 0;
+  padding-right: 4px;
+  text-align: left;
 }
 
 @media (max-width: 768px) {
@@ -354,6 +403,16 @@ html[data-theme='dark'] .status-connected {
 html[data-theme='dark'] .status-disconnected {
   background: #450a0a;
   color: #fecaca;
+}
+
+html[data-theme='dark'] .delete-device-btn {
+  background: #262a36;
+  border-color: #f87171;
+  color: #fecaca;
+}
+
+html[data-theme='dark'] .delete-device-btn:hover:not(:disabled) {
+  background: #3f1d1d;
 }
 
 html[data-theme='dark'] .device-body {

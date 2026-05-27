@@ -209,14 +209,16 @@ class AwsIotService:
             logger.warning("Payload IoT incompleto en %s: %s", topic, data)
             return
 
-        # 🔍 Detección automática de nuevos dispositivos por MQTT
-        existing_device = get_device_by_arduino_id(sensor_payload.arduino_id)
+        # 🔍 Detección automática por nombre del dispositivo (campo nombre en MQTT)
+        device_key = sensor_payload.arduino_id
+        existing_device = get_device_by_arduino_id(device_key)
         if not existing_device:
-            # Auto-registrar nuevo dispositivo detectado
-            device_name = data.get("nombre") or data.get("Nombre") or f"Dispositivo {sensor_payload.arduino_id}"
+            device_name = (
+                data.get("nombre") or data.get("Nombre") or device_key
+            )
             new_device = register_new_microcontroller(
-                arduino_id=sensor_payload.arduino_id,
-                device_name=device_name,
+                arduino_id=device_key,
+                device_name=str(device_name).strip(),
                 device_type="ESP8266",  # Por defecto ESP8266 para MQTT
                 location=""
             )
@@ -265,7 +267,8 @@ def _device_id_from_topic(topic: str) -> Optional[str]:
 
 def parse_iot_telemetry(data: dict, topic: str) -> Optional[SensorMongoPayload]:
     """
-    Formato principal: ReciberConPostMQTT → topic ``boya/sensores``::
+    Formato principal: ReciberConPostMQTT → topic ``boya/sensores``.
+    La clave del dispositivo es el campo ``nombre`` (``id_env`` no se usa para identificar).
 
         {
           "nombre": "Boya1",
@@ -294,9 +297,9 @@ def parse_iot_telemetry(data: dict, topic: str) -> Optional[SensorMongoPayload]:
         return None
 
     nombre = _first_present(data, "nombre", "Nombre")
-    id_env = _first_present(data, "id_env")
-    if nombre is not None and id_env is not None:
-        arduino_id = f"{nombre}-{id_env}"
+    if nombre is not None:
+        # Clave estable por dispositivo físico (ignora id_env, que puede incrementar por lectura)
+        arduino_id = str(nombre).strip()
     else:
         arduino_id = (
             _first_present(data, "arduino_id", "device_id", "thing_name", "sensor_id")

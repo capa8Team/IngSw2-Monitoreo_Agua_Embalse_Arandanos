@@ -42,4 +42,6 @@ La solución está organizada en cuatro capas principales:
 
 Para el paso a paso de instalación y puesta en marcha, revisar:
 
-- QUICK_START.md
+- [docs/QUICK_START.md](docs/QUICK_START.md)
+- [docs/DOCKER.md](docs/DOCKER.md) — desarrollo y pruebas con Docker Compose
+- [docs/DESPLIEGUE_EC2.md](docs/DESPLIEGUE_EC2.md) — producción en instancia AWS EC2

@@ -46,16 +46,32 @@
 
           <!-- Arduino ID (si aplica) -->
           <div class="form-group">
-            <label for="arduino-id">Arduino ID (opcional)</label>
+            <label for="arduino-id">Identificador del dispositivo (opcional)</label>
             <input
               id="arduino-id"
               v-model.trim="formData.arduino_id"
               type="text"
-              placeholder="Auto-detectado si se deja vacío"
+              placeholder="Ej: Norte (sobrenombre en el panel)"
               class="form-input"
             />
             <small class="help-text">
-              Si tienes el ID del Arduino, colócalo aquí. De lo contrario, se detectará automáticamente.
+              Nombre interno o alias en el sistema. Puede ser distinto del nombre que envía el sensor por MQTT.
+            </small>
+          </div>
+
+          <!-- Clave telemetría MQTT -->
+          <div class="form-group">
+            <label for="telemetry-key">Clave de telemetría MQTT (opcional)</label>
+            <input
+              id="telemetry-key"
+              v-model.trim="formData.telemetry_key"
+              type="text"
+              placeholder="Ej: Dispositivo 1 (nombre en el JSON del Arduino)"
+              class="form-input"
+            />
+            <small class="help-text">
+              Si comparte el mismo topic que otro dispositivo (réplica), indica aquí el campo
+              <strong>nombre</strong> que envía el hardware (p. ej. Dispositivo 1).
             </small>
           </div>
 
@@ -133,6 +149,7 @@ const formData = ref({
   device_type: 'ESP8266',
   location: '',
   arduino_id: '',
+  telemetry_key: '',
   topic: ''
 })
 
@@ -162,6 +179,7 @@ const resetForm = () => {
     device_type: 'ESP8266',
     location: '',
     arduino_id: '',
+    telemetry_key: '',
     topic: ''
   }
   errorMessage.value = ''
