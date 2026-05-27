@@ -67,6 +67,90 @@ async def create_new_device(payload: DeviceCreate) -> DeviceResponse:
     return DeviceResponse(**device)
 
 
+@router.post("/detect", response_model=DeviceResponse, status_code=201)
+async def detect_microcontroller(payload: DeviceDetectionPayload) -> DeviceResponse:
+    """
+    Detecta y registra un nuevo microcontrolador automáticamente.
+
+    Este endpoint se llama cuando el frontend detecta un nuevo dispositivo.
+
+    Parámetros:
+    - **arduino_id**: ID del Arduino detectado (requerido)
+    - **device_name**: Nombre personalizado del dispositivo (opcional)
+    - **device_type**: Tipo de microcontrolador (ESP8266, Arduino, STM32, other)
+    - **location**: Ubicación del dispositivo (opcional)
+    """
+    # Verificar si ya existe
+    existing = get_device_by_arduino_id(payload.arduino_id)
+    if existing:
+        log_service.log(
+            LogOrigin.DASHBOARD, LogLevel.WARN,
+            f"Intento de registrar microcontrolador duplicado: {payload.arduino_id}",
+            component="api.devices", operation="detect"
+        )
+        return DeviceResponse(**existing)
+
+    # Registrar nuevo
+    device = register_new_microcontroller(
+        arduino_id=payload.arduino_id,
+        device_name=payload.device_name,
+        device_type=payload.device_type,
+        location=payload.location or ""
+    )
+
+    if not device:
+        raise HTTPException(status_code=500, detail="Error detectando microcontrolador")
+
+    log_service.log(
+        LogOrigin.DASHBOARD, LogLevel.INFO,
+        f"Nuevo microcontrolador detectado: {payload.arduino_id}",
+        component="api.devices", operation="detect",
+        details={"device_type": payload.device_type}
+    )
+
+    return DeviceResponse(**device)
+
+
+@router.get("/detect-available")
+async def get_available_microcontrollers():
+    """
+    Obtiene la lista de microcontroladores disponibles para registrar.
+    (Basado en los Arduino IDs detectados en las lecturas de sensores)
+    """
+    from services.mongodb import db
+
+    if db is None:
+        return {"available": [], "total": 0}
+
+    try:
+        # Obtener todos los arduino_id únicos de sensor_readings
+        sensor_collection = db["sensor_readings"]
+        available = sensor_collection.distinct("arduino_id")
+
+        # Solo dispositivos activos cuentan como registrados
+        device_collection = db["devices"]
+        registered_keys: set[str] = set()
+        for doc in device_collection.find(
+            {"active": {"$ne": False}},
+            {"arduino_id": 1, "name": 1, "telemetry_key": 1, "topic": 1},
+        ):
+            for field in ("arduino_id", "name", "telemetry_key"):
+                if doc.get(field):
+                    registered_keys.add(doc[field])
+
+        new_ids = [aid for aid in available if aid and aid not in registered_keys]
+
+        return {
+            "available": new_ids,
+            "total": len(new_ids),
+            "already_registered": sorted(registered_keys),
+            "message": f"{len(new_ids)} microcontrolador(es) disponible(s) para registrar"
+        }
+    except Exception as e:
+        logger.error("Error obteniendo microcontroladores disponibles: %s", e)
+        return {"available": [], "total": 0, "error": str(e)}
+
+
 @router.get("/{device_id}", response_model=DeviceResponse)
 def get_device_info(device_id: str) -> DeviceResponse:
     """
@@ -124,50 +208,6 @@ async def delete_device_endpoint(device_id: str):
     )
 
 
-@router.post("/detect", response_model=DeviceResponse, status_code=201)
-async def detect_microcontroller(payload: DeviceDetectionPayload) -> DeviceResponse:
-    """
-    Detecta y registra un nuevo microcontrolador automáticamente.
-    
-    Este endpoint se llama cuando el frontend detecta un nuevo dispositivo.
-    
-    Parámetros:
-    - **arduino_id**: ID del Arduino detectado (requerido)
-    - **device_name**: Nombre personalizado del dispositivo (opcional)
-    - **device_type**: Tipo de microcontrolador (ESP8266, Arduino, STM32, other)
-    - **location**: Ubicación del dispositivo (opcional)
-    """
-    # Verificar si ya existe
-    existing = get_device_by_arduino_id(payload.arduino_id)
-    if existing:
-        log_service.log(
-            LogOrigin.DASHBOARD, LogLevel.WARN,
-            f"Intento de registrar microcontrolador duplicado: {payload.arduino_id}",
-            component="api.devices", operation="detect"
-        )
-        return DeviceResponse(**existing)
-    
-    # Registrar nuevo
-    device = register_new_microcontroller(
-        arduino_id=payload.arduino_id,
-        device_name=payload.device_name,
-        device_type=payload.device_type,
-        location=payload.location or ""
-    )
-    
-    if not device:
-        raise HTTPException(status_code=500, detail="Error detectando microcontrolador")
-    
-    log_service.log(
-        LogOrigin.DASHBOARD, LogLevel.INFO,
-        f"Nuevo microcontrolador detectado: {payload.arduino_id}",
-        component="api.devices", operation="detect",
-        details={"device_type": payload.device_type}
-    )
-    
-    return DeviceResponse(**device)
-
-
 @router.post("/{device_id}/status")
 async def update_device_connection_status(device_id: str, status: str = "online", battery: int | None = None):
     """
@@ -193,43 +233,3 @@ async def update_device_connection_status(device_id: str, status: str = "online"
         raise HTTPException(status_code=500, detail="Error actualizando estado")
     
     return DeviceResponse(**device)
-
-
-@router.post("/detect-available")
-async def get_available_microcontrollers():
-    """
-    Obtiene la lista de microcontroladores disponibles para registrar.
-    (Basado en los Arduino IDs detectados en las lecturas de sensores)
-    """
-    from services.mongodb import db
-    
-    if db is None:
-        return {"available": [], "total": 0}
-    
-    try:
-        # Obtener todos los arduino_id únicos de sensor_readings
-        sensor_collection = db["sensor_readings"]
-        available = sensor_collection.distinct("arduino_id")
-        
-        # Solo dispositivos activos cuentan como registrados
-        device_collection = db["devices"]
-        registered_keys: set[str] = set()
-        for doc in device_collection.find(
-            {"active": {"$ne": False}},
-            {"arduino_id": 1, "name": 1, "telemetry_key": 1, "topic": 1},
-        ):
-            for field in ("arduino_id", "name", "telemetry_key"):
-                if doc.get(field):
-                    registered_keys.add(doc[field])
-
-        new_ids = [aid for aid in available if aid and aid not in registered_keys]
-        
-        return {
-            "available": new_ids,
-            "total": len(new_ids),
-            "already_registered": sorted(registered_keys),
-            "message": f"{len(new_ids)} microcontrolador(es) disponible(s) para registrar"
-        }
-    except Exception as e:
-        logger.error("Error obteniendo microcontroladores disponibles: %s", e)
-        return {"available": [], "total": 0, "error": str(e)}

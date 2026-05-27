@@ -7,10 +7,14 @@
 
 services:
   mongodb:
-    ports: !reset []
+    # El stack en EC2 no necesita publicar MongoDB al host.
+    ports: []
 
   backend:
-    ports: !reset []
+    # El backend no se publica al host; el frontend (nginx) lo consume por red Docker.
+    ports: []
 
   frontend:
-    ports: !reset ["80:8000"]
+    # Publicar el frontend en HTTP (puerto 80 del host).
+    ports:
+      - "80:8000"
