@@ -9,26 +9,7 @@
       @open-account-activity="openAccountActivityView"
       @logout="handleLogout"
       @add-device="openAddDeviceFromDeviceList"
-    />
-
-    <!-- Modales de AdminDevicesSection -->
-    <AddDeviceModal
-      v-if="isAdmin"
-      :show="showAddModal"
-      title="Agregar Nuevo Dispositivo"
-      @close="closeAddModal"
-      @submit="handleAddDevice"
-    />
-
-    <DeviceDetectionModal
-      v-if="isAdmin"
-      :show="showDetectionModal"
-      :available-microcontrollers="availableMicrocontrollers"
-      :is-detecting="detectionInProgress"
-      :detection-message="detectionMessage"
-      @close="closeDetectionModal"
-      @detect="scanForNewDevices"
-      @register="registerDetectedDevice"
+      @devices-changed="onDevicesChanged"
     />
   </div>
 
@@ -694,7 +675,13 @@ import DeviceList from './DeviceList.vue'
 import ThemeToggleButton from './ThemeToggleButton.vue'
 import SensorCard from './SensorCard.vue'
 import BatteryIndicator from './BatteryIndicator.vue'
-import AdminDevicesSection from './AdminDevicesSection.vue'
+import { useDeviceStore } from '../stores/deviceStore'
+import {
+  mapApiDeviceToCard,
+  mergeCardWithTelemetry,
+  buildDefaultSimulatedCard,
+  applyDashboardToTelemetry,
+} from '../utils/deviceMapper.js'
 import { checkAndSendAlerts } from '../services/AlertService.js'
 import { fetchDashboardData, fetchSensorHistory, IS_SIMULATED_MODE, DATA_MODE } from '../services/ArduinoConfig.js'
 import {
@@ -715,7 +702,11 @@ import {
 import { fetchAccountsActivity } from '../services/adminActivityService.js'
 
 const router = useRouter()
+const deviceStore = useDeviceStore()
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+
+/** Telemetría en vivo por id de dispositivo (overlay sobre datos del API). */
+const telemetryByDeviceId = ref({})
 
 const ALERT_TABLE_LIMIT = 5
 
@@ -860,18 +851,34 @@ const displayedUsers = computed(() => {
   return list
 })
 
-const devices = ref([
-  {
-    id: 1,
-    name: 'ESP8266 Embalse',
-    model: 'ESP8266 - Lectura en tiempo real',
-    status: 'disconnected',
-    lastUpdate: 'Sin datos',
-    battery: 100,
-    sensors: { ph: 0, temperature: 0, conductivity: 0 },
-    dataSource: IS_SIMULATED_MODE ? 'simulated' : 'real'
+const devices = computed(() => {
+  const dataSource = IS_SIMULATED_MODE ? 'simulated' : 'real'
+  const apiList = deviceStore.devices
+
+  if (!apiList.length) {
+    if (IS_SIMULATED_MODE) {
+      const card = buildDefaultSimulatedCard()
+      return [mergeCardWithTelemetry(card, telemetryByDeviceId.value[card.id])]
+    }
+    return []
   }
-])
+
+  return apiList.map((apiDevice) => {
+    const card = mapApiDeviceToCard(apiDevice, { dataSource })
+    return mergeCardWithTelemetry(card, telemetryByDeviceId.value[card.id])
+  })
+})
+
+const loadDevices = async () => {
+  await deviceStore.fetchDevices(`${API_BASE_URL}/api/devices`)
+}
+
+const onDevicesChanged = async () => {
+  await loadDevices()
+  if (devices.value.length > 0 && !devices.value.some((d) => d.id === selectedDeviceId.value)) {
+    selectedDeviceId.value = devices.value[0].id
+  }
+}
 
 const selectedDevice = computed(() => {
   return devices.value.find((device) => device.id === selectedDeviceId.value) || {
@@ -957,14 +964,15 @@ const createRecord = ({ ph, temperature, conductivity, timestamp }) => {
     (safeTemperature  < (tempLimits.safe_min    ?? 0) || safeTemperature  > (tempLimits.safe_max    ?? 50))   ||
     (safeConductivity < (conductLimits.safe_min ?? 0) || safeConductivity > (conductLimits.safe_max ?? 3000))
 
+  const device = selectedDevice.value
   return {
     id: `real-${now.getTime()}-${Math.random().toString(16).slice(2, 8)}`,
-    deviceId: 1,
-    deviceName: devices.value[0].name,
+    deviceId: device.id,
+    deviceName: device.name,
     ph: safePh,
     temperature: safeTemperature,
     conductivity: safeConductivity,
-    battery: devices.value[0].battery,
+    battery: device.battery ?? 100,
     date: formatDate(now),
     time: formatTime(now),
     timestamp: now.getTime(),
@@ -986,7 +994,9 @@ const availableDates = computed(() => {
 const historyFilteredRows = computed(() => {
   return historyRecords.value
     .filter((record) => {
-      const matchesDevice = historyFilters.value.deviceId === 'all' || record.deviceId === Number(historyFilters.value.deviceId)
+      const matchesDevice =
+        historyFilters.value.deviceId === 'all' ||
+        String(record.deviceId) === String(historyFilters.value.deviceId)
       const matchesDate = historyFilters.value.date === 'all' || record.date === historyFilters.value.date
       return matchesDevice && matchesDate
     })
@@ -996,7 +1006,12 @@ const historyFilteredRows = computed(() => {
 const todayString = computed(() => formatDate(new Date()))
 const todayAlerts = computed(() => {
   return historyRecords.value
-    .filter((record) => record.isAlert && record.deviceId === selectedDeviceId.value && record.date === todayString.value)
+    .filter(
+      (record) =>
+        record.isAlert &&
+        String(record.deviceId) === String(selectedDeviceId.value) &&
+        record.date === todayString.value
+    )
     .sort((a, b) => b.timestamp - a.timestamp)
 })
 
@@ -1117,15 +1132,28 @@ const loadHistoryFromApi = async () => {
 }
 
 const loadDashboardFromApi = async () => {
-  const dashboard = await fetchDashboardData()
-  console.log('[DEBUG] Respuesta de /api/dashboard:', dashboard)
+  const deviceId = selectedDeviceId.value
+  if (!deviceId) return
+
+  const active = devices.value.find((d) => d.id === deviceId)
+  const arduinoId = active?.arduino_id || null
+  const dashboard = await fetchDashboardData(
+    arduinoId
+      ? `${API_BASE_URL}/api/dashboard?arduino_id=${encodeURIComponent(arduinoId)}`
+      : undefined,
+    arduinoId
+  )
+  console.log('[DEBUG] Respuesta de /api/dashboard:', dashboard, { deviceId, arduinoId })
+
   if (!dashboard) {
-    devices.value[0] = {
-      ...devices.value[0],
-      status: 'disconnected',
-      lastUpdate: 'Sin datos',
-      sensors: { ph: 0, temperature: 0, conductivity: 0 },
-      dataSource: 'unknown'
+    telemetryByDeviceId.value = {
+      ...telemetryByDeviceId.value,
+      [deviceId]: {
+        status: 'disconnected',
+        lastUpdate: 'Sin datos',
+        sensors: { ph: 0, temperature: 0, conductivity: 0 },
+        dataSource: 'unknown',
+      },
     }
     lastSync.value = 'Sin datos del Arduino'
     return
@@ -1144,20 +1172,17 @@ const loadDashboardFromApi = async () => {
     }
   }
 
-  devices.value[0] = {
-    ...devices.value[0],
-    status: dashboard.metadata.arduinoConnected ? 'connected' : 'disconnected',
-    lastUpdate: formatLastSync(dashboard.ph.lastUpdated),
-    sensors: {
-      ph: Number(dashboard.ph.value),
-      temperature: Number(dashboard.temperature.value),
-      conductivity: Number(dashboard.conductivity.value)
-    },
-    battery: dashboard.battery || 100,
-    bateria: dashboard.battery || 100,
-    dataSource: dataSource
+  const telemetry = applyDashboardToTelemetry(dashboard, dataSource)
+  if (telemetry) {
+    telemetryByDeviceId.value = {
+      ...telemetryByDeviceId.value,
+      [deviceId]: {
+        ...telemetry,
+        lastUpdate: formatLastSync(dashboard.ph?.lastUpdated ?? dashboard.metadata?.lastSync),
+      },
+    }
   }
-  lastSync.value = formatLastSync(dashboard.metadata.lastSync)
+  lastSync.value = formatLastSync(dashboard.metadata?.lastSync)
 }
 
 const selectDevice = (device) => {
@@ -1444,7 +1469,7 @@ const updateSensorData = async () => {
   if (!latestRecord || !latestRecord.isAlert) return
 
   if (latestRecord.timestamp > lastProcessedAlertTimestamp.value) {
-    await checkAndSendAlerts(devices.value[0], SENSOR_LIMITS.value)
+    await checkAndSendAlerts(selectedDevice.value, SENSOR_LIMITS.value)
     lastProcessedAlertTimestamp.value = latestRecord.timestamp
   }
 }
@@ -1484,7 +1509,13 @@ onMounted(async () => {
 
   enforceAdminOnlyViews()
 
-  selectedDeviceId.value = 1
+  await loadDevices()
+  if (devices.value.length > 0) {
+    selectedDeviceId.value = devices.value[0].id
+  } else {
+    selectedDeviceId.value = null
+  }
+
   console.log('[FRONTEND] VITE_DATA_MODE:', DATA_MODE)
   startSensorUpdates()
 

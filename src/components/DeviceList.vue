@@ -73,6 +73,7 @@
         ref="adminSectionRef"
         :is-admin="isAdmin"
         :show-section="true"
+        @devices-changed="$emit('devices-changed')"
       />
 
       <div class="devices-grid" :class="`view-${viewMode}`">
@@ -122,7 +123,15 @@ const selectDevice = (device) => {
   emit('select-device', device)
 }
 
-const emit = defineEmits(['select-device', 'open-history', 'open-user-management', 'open-account-activity', 'logout', 'add-device'])
+const emit = defineEmits([
+  'select-device',
+  'open-history',
+  'open-user-management',
+  'open-account-activity',
+  'logout',
+  'add-device',
+  'devices-changed',
+])
 </script>
 
 <style scoped>

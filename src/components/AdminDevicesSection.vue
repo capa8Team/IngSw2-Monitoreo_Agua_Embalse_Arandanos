@@ -34,10 +34,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useDeviceStore } from '../stores/deviceStore'
 import AddDeviceModal from './AddDeviceModal.vue'
 import DeviceDetectionModal from './DeviceDetectionModal.vue'
+
+const emit = defineEmits(['devices-changed'])
 
 const props = defineProps({
   showSection: {
@@ -88,10 +90,18 @@ const closeDetectionModal = () => {
 
 const handleAddDevice = async (deviceData) => {
   try {
-    await deviceStore.createDevice(deviceData)
+    await deviceStore.createDevice({
+      name: deviceData.name,
+      device_type: deviceData.device_type,
+      location: deviceData.location || '',
+      arduino_id: deviceData.arduino_id || null,
+      topic: deviceData.topic || null,
+    })
     closeAddModal()
+    emit('devices-changed')
   } catch (error) {
     console.error('Error creating device:', error)
+    throw error
   }
 }
 
@@ -122,6 +132,7 @@ const registerDetectedDevice = async (arduinoId, customName) => {
       location: ''
     }
     await deviceStore.detectMicrocontroller(detectionData)
+    emit('devices-changed')
   } catch (error) {
     console.error('Error registering device:', error)
     throw error
@@ -133,12 +144,6 @@ watch(() => props.triggerOpenModal, (newVal) => {
   if (newVal === true && isAdmin.value) {
     openAddModal()
   }
-})
-
-// Cargar dispositivos al montar
-onMounted(async () => {
-  const apiUrl = import.meta.env.VITE_API_URL || ''
-  await deviceStore.fetchDevices(apiUrl)
 })
 
 // Exponer métodos públicos para usar desde otros componentes

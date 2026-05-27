@@ -106,6 +106,7 @@ class Device(BaseModel):
     location: str = Field(default="", max_length=200)
     status: Literal["online", "offline", "unknown"] = "unknown"
     arduino_id: str | None = None
+    topic: str | None = None
     battery: int = Field(default=100, ge=0, le=100)
     last_sync: datetime | None = None
     created_at: datetime
@@ -117,6 +118,7 @@ class DeviceCreate(BaseModel):
     device_type: Literal["ESP8266", "Arduino", "STM32", "other"] = Field(default="ESP8266", description="Tipo de microcontrolador")
     location: str = Field(default="", max_length=200, description="Ubicación o zona del dispositivo")
     arduino_id: str | None = Field(default=None, description="ID del Arduino (auto-detectado)")
+    topic: str | None = Field(default=None, max_length=200, description="Topic MQTT del dispositivo")
 
 class DeviceUpdate(BaseModel):
     name: str | None = Field(None, max_length=100)
@@ -135,6 +137,7 @@ class DeviceResponse(BaseModel):
     updated_at: datetime
     active: bool
     arduino_id: str | None = None
+    topic: str | None = None
 
 class DeviceDetectionPayload(BaseModel):
     arduino_id: str

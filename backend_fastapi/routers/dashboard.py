@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from models import DashboardResponse, SensorData, Metadata
 from services.mongodb import update_dashboard_state_from_mongodb
 from core.log_service import log_service
@@ -33,8 +33,13 @@ def _empty_dashboard() -> DashboardResponse:
 
 
 @router.get("", response_model=DashboardResponse)
-def get_dashboard_data() -> DashboardResponse:
-    state = update_dashboard_state_from_mongodb()
+def get_dashboard_data(
+    arduino_id: str | None = Query(
+        None,
+        description="Filtrar lecturas por ID de Arduino/microcontrolador",
+    ),
+) -> DashboardResponse:
+    state = update_dashboard_state_from_mongodb(arduino_id=arduino_id)
     if state is None:
         logger.warning("No hay datos en la BD. Retornando estado vacío.")
         return _empty_dashboard()

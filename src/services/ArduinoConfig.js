@@ -84,11 +84,20 @@ const buildSimulatedDashboard = () => {
 // API CALLS
 // ============================================================================
 
-export const fetchDashboardData = async (apiUrl = `${API_BASE_URL}/api/dashboard`) => {
+/**
+ * @param {string} [apiUrl] URL completa del dashboard (p. ej. con ?arduino_id=...)
+ * @param {string} [arduinoId] Atajo: filtra lecturas por microcontrolador
+ */
+export const fetchDashboardData = async (apiUrl, arduinoId = null) => {
   if (IS_SIMULATED_MODE) return buildSimulatedDashboard()
 
+  let url = apiUrl || `${API_BASE_URL}/api/dashboard`
+  if (!apiUrl && arduinoId) {
+    url = `${API_BASE_URL}/api/dashboard?arduino_id=${encodeURIComponent(arduinoId)}`
+  }
+
   try {
-    const response = await fetch(apiUrl)
+    const response = await fetch(url)
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     return await response.json()
   } catch (error) {

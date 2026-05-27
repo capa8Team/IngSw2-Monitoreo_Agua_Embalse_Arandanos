@@ -49,7 +49,8 @@ async def create_new_device(payload: DeviceCreate) -> DeviceResponse:
         name=payload.name,
         device_type=payload.device_type,
         location=payload.location,
-        arduino_id=payload.arduino_id
+        arduino_id=payload.arduino_id,
+        topic=payload.topic,
     )
     
     if not device:

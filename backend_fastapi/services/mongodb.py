@@ -132,10 +132,11 @@ def normalize_sensor_document(reading: dict) -> dict:
         "timestamp": to_chile_time(reading.get("timestamp", utc_now())),
     }
 
-def get_latest_sensor_reading() -> Optional[dict]:
+def get_latest_sensor_reading(arduino_id: str | None = None) -> Optional[dict]:
     if db is not None:
         try:
-            reading = db["sensor_readings"].find_one(sort=[("_id", -1)])
+            query = {"arduino_id": arduino_id} if arduino_id else {}
+            reading = db["sensor_readings"].find_one(query, sort=[("_id", -1)])
             if reading:
                 return normalize_sensor_document(reading)
         except Exception as e:
@@ -158,9 +159,9 @@ def get_sensor_readings_history(limit: int = 100) -> list[dict]:
         return [normalize_sensor_document(reading) for reading in readings]
     return []
 
-def update_dashboard_state_from_mongodb() -> Optional[DashboardResponse]:
+def update_dashboard_state_from_mongodb(arduino_id: str | None = None) -> Optional[DashboardResponse]:
     global dashboard_state
-    reading = get_latest_sensor_reading()
+    reading = get_latest_sensor_reading(arduino_id)
     if not reading:
         dashboard_state = None
         return None
@@ -218,7 +219,13 @@ def build_payload_from_ph_post(reading: SensorPhPostReading) -> SensorMongoPaylo
 # GESTIÓN DE DISPOSITIVOS (MICROCONTROLADORES / ARDUINOS)
 # ============================================================================
 
-def create_device(name: str, device_type: str, location: str, arduino_id: str | None = None) -> Optional[dict]:
+def create_device(
+    name: str,
+    device_type: str,
+    location: str,
+    arduino_id: str | None = None,
+    topic: str | None = None,
+) -> Optional[dict]:
     """Crea un nuevo dispositivo en la base de datos."""
     if db is None:
         logger.warning("MongoDB no está disponible")
@@ -238,6 +245,7 @@ def create_device(name: str, device_type: str, location: str, arduino_id: str | 
             "location": location,
             "status": "unknown",
             "arduino_id": arduino_id,
+            "topic": topic,
             "battery": 100,
             "last_sync": None,
             "created_at": now,

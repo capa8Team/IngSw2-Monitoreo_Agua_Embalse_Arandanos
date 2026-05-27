@@ -121,7 +121,8 @@ export function useDeviceManagement() {
         name: newDeviceForm.value.name,
         device_type: newDeviceForm.value.device_type,
         location: newDeviceForm.value.location,
-        arduino_id: newDeviceForm.value.arduino_id || null
+        arduino_id: newDeviceForm.value.arduino_id || null,
+        topic: newDeviceForm.value.topic || null,
       })
 
       closeAddModal()
