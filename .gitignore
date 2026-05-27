@@ -31,8 +31,7 @@ venv/
 
 # Secrets, credenciales y entorno local
 .env
-.env.*
-!.env.example
+.env
 backend_fastapi/.env
 backend_fastapi/.env.local
 *.credentials
@@ -55,3 +54,4 @@ IotCore/AmazonRootCA*.pem
 backend_fastapi/logs/
 !backend_fastapi/logs/.gitkeep
 backend_fastapi/app.log*
+*.pem
