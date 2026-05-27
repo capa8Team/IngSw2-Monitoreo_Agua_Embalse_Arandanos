@@ -1,5 +1,6 @@
 import { createCorrelationId, appLogger } from '../utils/logger.js'
 import { clearSupabaseSession } from './supabaseSessionBridge.js'
+import { supabase } from './supabaseClient.js'
 
 /**
  * Access JWT: 30 min solo administrador; empleado con validez mayor (config en API).
@@ -88,12 +89,48 @@ export function clearSession() {
   clearSupabaseSession()
 }
 
+const EMPLOYEE_ROLES = new Set(['empleado', 'employee', 'trabajador', 'user'])
+
+export function isEmployeeRole(role) {
+  const r = String(role || '').toLowerCase().trim()
+  return EMPLOYEE_ROLES.has(r)
+}
+
 export function isAdminRole(role) {
-  const r = String(role || '').toLowerCase()
+  const r = String(role || '').toLowerCase().trim()
+  if (!r || isEmployeeRole(r)) return false
   return r === 'administrador' || r === 'admin'
 }
 
-export async function apiLogin(email, password) {
+/** Vistas internas del dashboard reservadas a administradores. */
+export const ADMIN_ONLY_VIEWS = new Set(['admin-users', 'admin-activity', 'admin-alerts'])
+
+function mapSupabaseLoginError(message) {
+  const m = String(message || '').toLowerCase()
+  if (m.includes('invalid login credentials')) return 'Correo o contraseña incorrectos'
+  if (m.includes('email not confirmed')) return 'Debes confirmar tu correo antes de iniciar sesión'
+  return message || 'No se pudo iniciar sesión'
+}
+
+async function exchangeSupabaseSession(email, accessToken) {
+  const res = await fetch(`${API_URL}/api/auth/session`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'X-Correlation-Id': createCorrelationId(),
+    },
+    body: JSON.stringify({ email, access_token: accessToken }),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const msg = body.message || body.detail || 'No se pudo obtener sesión de la API'
+    throw new Error(typeof msg === 'string' ? msg : 'Error al iniciar sesión')
+  }
+  return body
+}
+
+async function loginViaBackendPassword(email, password) {
   const res = await fetch(`${API_URL}/api/auth/login`, {
     method: 'POST',
     headers: {
@@ -110,6 +147,32 @@ export async function apiLogin(email, password) {
     throw new Error(typeof msg === 'string' ? msg : 'Credenciales inválidas')
   }
   return body
+}
+
+/**
+ * 1) Supabase signInWithPassword (misma vía que al crear usuarios)
+ * 2) Intercambio por JWT de la app en POST /api/auth/session
+ * 3) Respaldo: POST /api/auth/login si Supabase no está configurado en el cliente
+ */
+export async function apiLogin(email, password) {
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+
+  if (supabase) {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: normalizedEmail,
+      password,
+    })
+    if (error) {
+      throw new Error(mapSupabaseLoginError(error.message))
+    }
+    const accessToken = data?.session?.access_token
+    if (!accessToken) {
+      throw new Error('No se pudo obtener la sesión de Supabase')
+    }
+    return exchangeSupabaseSession(normalizedEmail, accessToken)
+  }
+
+  return loginViaBackendPassword(normalizedEmail, password)
 }
 
 /** Renueva access (y refresh rotado) usando el refresh token. */

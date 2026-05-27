@@ -91,6 +91,10 @@ class Settings(BaseSettings):
     JWT_REFRESH_DAYS: int = 7
     AUTH_DEMO_PASSWORD: str = "123456789"
     SUPABASE_DB_URL: str | None = None
+    SUPABASE_URL: str | None = None
+    SUPABASE_ANON_KEY: str | None = None
+    VITE_SUPABASE_URL: str | None = None
+    VITE_SUPABASE_ANON_KEY: str | None = None
 
     @property
     def parsed_to_emails(self) -> List[str]:

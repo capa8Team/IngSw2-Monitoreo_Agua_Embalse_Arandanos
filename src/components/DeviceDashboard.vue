@@ -6,6 +6,7 @@
       @select-device="selectDevice"
       @open-history="openHistory"
       @open-user-management="openUserManagementView"
+      @open-account-activity="openAccountActivityView"
       @logout="handleLogout"
       @add-device="openAddDeviceFromDeviceList"
     />
@@ -162,7 +163,7 @@
     </main>
   </div>
 
-  <div v-else-if="currentView === 'admin-alerts'" class="dashboard">
+  <div v-else-if="isAdmin && currentView === 'admin-alerts'" class="dashboard">
     <header class="dashboard-header">
       <div class="header-content">
         <ThemeToggleButton />
@@ -300,7 +301,7 @@
     </main>
   </div>
 
-  <div v-else-if="currentView === 'admin-users'" class="dashboard">
+  <div v-else-if="isAdmin && currentView === 'admin-users'" class="dashboard">
     <header class="dashboard-header">
       <div class="header-content">
         <ThemeToggleButton />
@@ -480,6 +481,83 @@
     </main>
   </div>
 
+  <div v-else-if="isAdmin && currentView === 'admin-activity'" class="dashboard">
+    <header class="dashboard-header">
+      <div class="header-content">
+        <ThemeToggleButton />
+        <button class="back-btn" @click="goToHome" title="Volver al inicio">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+            <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+          </svg>
+        </button>
+        <div>
+          <h1 class="header-title">Actividad de cuentas</h1>
+          <p class="header-subtitle">Monitoreo de inicios de sesión (solo administradores)</p>
+        </div>
+      </div>
+      <div class="header-center admin-top-actions">
+        <button class="admin-nav-btn active">Actividad</button>
+      </div>
+      <div class="header-right">
+        <button class="logout-btn" type="button" @click="handleLogout">Cerrar sesión</button>
+      </div>
+    </header>
+
+    <main class="dashboard-content">
+      <section class="user-management-section">
+        <div class="alerts-header">
+          <h2 class="section-title">Seguimiento de actividad</h2>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <label style="font-size:13px; font-weight:700; color:#555;">
+              Ventana:
+              <select v-model.number="activityDays" style="margin-left:8px; padding:8px 10px; border-radius:8px; border:1px solid #d1d5db;">
+                <option :value="7">7 días</option>
+                <option :value="30">30 días</option>
+                <option :value="90">90 días</option>
+              </select>
+            </label>
+            <button class="refresh-users-btn" @click="loadAccountsActivity" :disabled="isLoadingActivity">
+              {{ isLoadingActivity ? '⟳ Cargando...' : '↻ Actualizar' }}
+            </button>
+          </div>
+        </div>
+
+        <div v-if="activityError" class="error-message">{{ activityError }}</div>
+
+        <div v-if="!isLoadingActivity && accountsActivity.length === 0" class="no-users">
+          No hay actividad registrada en la ventana seleccionada.
+        </div>
+
+        <div v-else class="users-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Último login</th>
+                <th>Rol (último)</th>
+                <th>Logins (total)</th>
+                <th>Logins (7d)</th>
+                <th>Fallidos (total)</th>
+                <th>Último fallido</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in accountsActivity" :key="row.email">
+                <td>{{ row.email }}</td>
+                <td>{{ formatDateTimeMaybe(row.last_login_at) }}</td>
+                <td>{{ row.last_role || '—' }}</td>
+                <td>{{ row.logins_total }}</td>
+                <td>{{ row.logins_last_7d }}</td>
+                <td>{{ row.failed_logins_total }}</td>
+                <td>{{ formatDateTimeMaybe(row.last_login_failed_at) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
   <div v-else class="history-view">
     <header class="dashboard-header">
       <div class="header-content">
@@ -589,10 +667,16 @@
   </div>
 
   <!-- Sección de Gestión de Dispositivos (siempre renderizada para acceso desde cualquier vista) -->
-  <AdminDevicesSection ref="devicesSectionRef" :show-section="currentView === 'dashboard'" :trigger-open-modal="triggerOpenAddModal" />
+  <AdminDevicesSection
+    v-if="isAdmin"
+    ref="devicesSectionRef"
+    :is-admin="isAdmin"
+    :show-section="currentView === 'dashboard'"
+    :trigger-open-modal="triggerOpenAddModal"
+  />
 
   <!-- Modal Agregar Dispositivo (simple, para evitar problemas con AdminDevicesSection) -->
-  <div v-if="showAddDeviceModal" class="modal-overlay" @click.self="showAddDeviceModal = false">
+  <div v-if="isAdmin && showAddDeviceModal" class="modal-overlay" @click.self="showAddDeviceModal = false">
     <div class="modal-content">
       <div class="modal-header">
         <h3>Agregar Nuevo Dispositivo</h3>
@@ -699,7 +783,14 @@ import {
   getCurrentUser,
 } from '../services/SupabaseAuthService.js'
 import { ensureSupabaseAdminSession } from '../services/supabaseSessionBridge.js'
-import { clearSession, stopSessionIdleWatcher, hasValidSessionToken } from '../services/sessionAuth.js'
+import {
+  clearSession,
+  stopSessionIdleWatcher,
+  hasValidSessionToken,
+  isAdminRole,
+  ADMIN_ONLY_VIEWS,
+} from '../services/sessionAuth.js'
+import { fetchAccountsActivity } from '../services/adminActivityService.js'
 
 const router = useRouter()
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
@@ -802,11 +893,25 @@ const isSubmittingDevice = ref(false)
 const lastSync = ref('Sin datos del Arduino')
 const showAllTodayAlerts = ref(false)
 
-// Detectar si es admin
-const isAdmin = computed(() => {
-  const userRole = String(localStorage.getItem('userRole') || '').toLowerCase()
-  return userRole === 'admin' || userRole === 'administrador'
-})
+const sessionRole = ref(localStorage.getItem('userRole') || '')
+
+const refreshSessionRole = () => {
+  sessionRole.value = localStorage.getItem('userRole') || ''
+}
+
+const isAdmin = computed(() => isAdminRole(sessionRole.value))
+
+/** Impide que empleados permanezcan en vistas solo de administrador. */
+const enforceAdminOnlyViews = () => {
+  refreshSessionRole()
+  if (!isAdmin.value) {
+    if (ADMIN_ONLY_VIEWS.has(currentView.value)) {
+      currentView.value = 'devices'
+    }
+    showAddDeviceModal.value = false
+    triggerOpenAddModal.value = false
+  }
+}
 
 // Estado de creación de usuario
 const newUser = ref({
@@ -827,6 +932,12 @@ const userVerificationFilter = ref('all')
 const usersListSource = ref(null)
 const usersLoadError = ref('')
 const isLoadingUsers = ref(false)
+
+// Estado actividad de cuentas (admin)
+const accountsActivity = ref([])
+const isLoadingActivity = ref(false)
+const activityError = ref('')
+const activityDays = ref(30)
 
 const displayedUsers = computed(() => {
   const list = existingUsers.value || []
@@ -1180,6 +1291,34 @@ const goToHome = () => {
   currentView.value = 'devices'
 }
 
+const formatDateTimeMaybe = (value) => {
+  if (!value) return '—'
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return String(value)
+  return d.toLocaleString('es-ES')
+}
+
+const loadAccountsActivity = async () => {
+  if (!isAdmin.value) return
+  isLoadingActivity.value = true
+  activityError.value = ''
+  try {
+    const data = await fetchAccountsActivity({ days: activityDays.value })
+    accountsActivity.value = Array.isArray(data?.items) ? data.items : []
+  } catch (e) {
+    activityError.value = e?.message || 'No se pudo cargar la actividad'
+    accountsActivity.value = []
+  } finally {
+    isLoadingActivity.value = false
+  }
+}
+
+const openAccountActivityView = async () => {
+  if (!isAdmin.value) return
+  currentView.value = 'admin-activity'
+  await loadAccountsActivity()
+}
+
 const goBack = () => {
   // Descartar cambios sin guardar cuando se regresa de la vista de configuración
   if (currentView.value === 'admin-alerts') {
@@ -1265,8 +1404,7 @@ const saveAlertConfig = async (sensorType) => {
   try {
     isCreatingUser.value = true
 
-    const userRole = String(localStorage.getItem('userRole') || '').toLowerCase()
-    if (userRole !== 'admin' && userRole !== 'administrador') {
+    if (!isAdmin.value) {
       alert('⚠️ Debes ser administrador para guardar configuraciones de alertas')
       return
     }
@@ -1464,7 +1602,8 @@ const stopSensorUpdates = () => {
 }
 
 watch(currentView, (view) => {
-  if (view === 'admin-users') {
+  enforceAdminOnlyViews()
+  if (view === 'admin-users' && isAdmin.value) {
     startUsersAutoRefresh()
   } else {
     stopUsersAutoRefresh()
@@ -1481,6 +1620,8 @@ onMounted(async () => {
     router.push('/login')
     return
   }
+
+  enforceAdminOnlyViews()
 
   selectedDeviceId.value = 1
   console.log('[FRONTEND] VITE_DATA_MODE:', DATA_MODE)

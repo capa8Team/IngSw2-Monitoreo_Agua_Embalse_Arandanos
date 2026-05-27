@@ -62,6 +62,8 @@ services:
       MAILERSEND_FROM_NAME: ${MAILERSEND_FROM_NAME:-Monitoreo Embalse Arandanos}
       MAILERSEND_TO_EMAILS: ${MAILERSEND_TO_EMAILS:-}
       SUPABASE_DB_URL: ${SUPABASE_DB_URL:-}
+      VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+      VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
       LOG_DIR: logs
       AWS_IOT_ENABLED: "${AWS_IOT_ENABLED:-false}"
       AWS_IOT_PORT: ${AWS_IOT_PORT:-8883}
@@ -77,6 +79,12 @@ services:
     ports:
       # Dockerfile expone uvicorn en puerto 80 dentro del contenedor
       - "${BACKEND_PORT:-8000}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:80/health', timeout=5)\""]
+      interval: 10s
+      timeout: 10s
+      retries: 6
+      start_period: 30s
     depends_on:
       mongodb:
         condition: service_healthy
@@ -98,8 +106,15 @@ services:
     ports:
       # nginx.conf escucha en 8000 dentro del contenedor (ver Dockerfile.frontend)
       - "${FRONTEND_PORT:-5173}:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 6
+      start_period: 20s
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - arandanos-network
 

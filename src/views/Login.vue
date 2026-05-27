@@ -47,8 +47,9 @@
       </form>
 
       <div class="demo-info">
-        <p><strong>Demostración:</strong></p>
-        <p>Admin: admin@test.com / 123456789</p>
+        <p><strong>Nota:</strong></p>
+        <p>Usa el correo y la contraseña definidos al crear la cuenta en Supabase.</p>
+        <p v-if="demoHint">Demo local (sin Supabase): admin@test.com / 123456789</p>
       </div>
     </div>
   </div>
@@ -59,7 +60,6 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import ThemeToggleButton from '../components/ThemeToggleButton.vue'
 import { apiLogin, persistSession, startSessionIdleWatcher } from '../services/sessionAuth.js'
-import { syncSupabaseSessionAfterLogin } from '../services/supabaseSessionBridge.js'
 
 const router = useRouter()
 
@@ -70,6 +70,7 @@ const form = ref({
 
 const error = ref('')
 const isLoading = ref(false)
+const demoHint = !import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY
 
 const handleLogin = async () => {
   error.value = ''
@@ -84,11 +85,6 @@ const handleLogin = async () => {
     const email = form.value.email.trim()
     const data = await apiLogin(email, form.value.password)
     persistSession(data)
-
-    const supabaseBridge = await syncSupabaseSessionAfterLogin(email, form.value.password)
-    if (!supabaseBridge.success && !supabaseBridge.skipped) {
-      console.warn('[Login] Sesión Supabase no vinculada:', supabaseBridge.error, supabaseBridge.detail || '')
-    }
 
     startSessionIdleWatcher(router)
     await router.push('/dashboard')
