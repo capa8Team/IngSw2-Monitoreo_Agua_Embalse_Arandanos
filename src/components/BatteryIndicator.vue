@@ -51,7 +51,7 @@ const props = defineProps({
   }
 })
 
-const batteryLevel = computed(() => Math.min(100, Math.max(0, props.level)))
+const batteryLevel = computed(() => Math.round(Math.min(100, Math.max(0, props.level))))
 
 const batteryFillWidth = computed(() => {
   // El ancho máximo de la barra de carga es ~14 (desde x=3 hasta x=17)

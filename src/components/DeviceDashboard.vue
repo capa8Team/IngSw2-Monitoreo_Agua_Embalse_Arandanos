@@ -976,37 +976,40 @@ const createRecord = ({ ph, temperature, conductivity, timestamp }) => {
   let triggerValue = null
   let alertType = 'warning'
   
-  // Determinar tipo de alerta (warning = cerca del límite, danger = muy afuera)
+  // Determinar tipo de alerta basándose en los rangos warning y danger
   if (phAlert) {
     triggerField = 'pH'
     triggerValue = safePh
-    const phMin = phLimits.safe_min ?? 0
-    const phMax = phLimits.safe_max ?? 14
-    const phRange = phMax - phMin
-    const warningMargin = phRange * 0.1
-    if (safePh < (phMin - warningMargin) || safePh > (phMax + warningMargin)) {
-      alertType = 'danger'
-    }
+    const warningMin = phLimits.warning_min ?? 0
+    const warningMax = phLimits.warning_max ?? 14
+    const warningMinSup = phLimits.warning_min_sup ?? 0
+    const warningMaxSup = phLimits.warning_max_sup ?? 14
+    
+    // Si está dentro de los rangos warning = Advertencia, sino = Peligro
+    const inWarningRange = (safePh >= warningMin && safePh <= warningMax) || (safePh >= warningMinSup && safePh <= warningMaxSup)
+    alertType = inWarningRange ? 'warning' : 'danger'
   } else if (tempAlert) {
     triggerField = 'Temperatura'
     triggerValue = safeTemperature
-    const tempMin = tempLimits.safe_min ?? 0
-    const tempMax = tempLimits.safe_max ?? 50
-    const tempRange = tempMax - tempMin
-    const warningMargin = tempRange * 0.1
-    if (safeTemperature < (tempMin - warningMargin) || safeTemperature > (tempMax + warningMargin)) {
-      alertType = 'danger'
-    }
+    const warningMin = tempLimits.warning_min ?? 0
+    const warningMax = tempLimits.warning_max ?? 50
+    const warningMinSup = tempLimits.warning_min_sup ?? 0
+    const warningMaxSup = tempLimits.warning_max_sup ?? 50
+    
+    // Si está dentro de los rangos warning = Advertencia, sino = Peligro
+    const inWarningRange = (safeTemperature >= warningMin && safeTemperature <= warningMax) || (safeTemperature >= warningMinSup && safeTemperature <= warningMaxSup)
+    alertType = inWarningRange ? 'warning' : 'danger'
   } else if (conductAlert) {
     triggerField = 'Conductividad'
     triggerValue = safeConductivity
-    const conductMin = conductLimits.safe_min ?? 0
-    const conductMax = conductLimits.safe_max ?? 3000
-    const conductRange = conductMax - conductMin
-    const warningMargin = conductRange * 0.1
-    if (safeConductivity < (conductMin - warningMargin) || safeConductivity > (conductMax + warningMargin)) {
-      alertType = 'danger'
-    }
+    const warningMin = conductLimits.warning_min ?? 0
+    const warningMax = conductLimits.warning_max ?? 3000
+    const warningMinSup = conductLimits.warning_min_sup ?? 0
+    const warningMaxSup = conductLimits.warning_max_sup ?? 3000
+    
+    // Si está dentro de los rangos warning = Advertencia, sino = Peligro
+    const inWarningRange = (safeConductivity >= warningMin && safeConductivity <= warningMax) || (safeConductivity >= warningMinSup && safeConductivity <= warningMaxSup)
+    alertType = inWarningRange ? 'warning' : 'danger'
   }
 
   const device = selectedDevice.value
@@ -1565,9 +1568,8 @@ onMounted(async () => {
   }
 
   console.log('[FRONTEND] VITE_DATA_MODE:', DATA_MODE)
-  startSensorUpdates()
 
-  // Cargar configuración de 3 valores desde localStorage
+  // Cargar configuración de 3 valores desde localStorage PRIMERO
   const savedConfig = localStorage.getItem('sensorLimitsConfig')
   if (savedConfig) {
     try {
@@ -1579,6 +1581,9 @@ onMounted(async () => {
       console.error('Error al cargar configuración guardada:', e)
     }
   }
+
+  // Iniciar actualizaciones de sensores DESPUÉS de cargar configuración
+  startSensorUpdates()
 
   if (isAdmin.value) {
     await loadExistingUsers()
