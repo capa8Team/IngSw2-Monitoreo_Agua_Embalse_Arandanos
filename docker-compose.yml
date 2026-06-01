@@ -98,7 +98,7 @@ services:
       args:
         # Vacío: URLs relativas /api → nginx → backend (recomendado en Docker).
         VITE_API_URL: "${VITE_API_URL:-}"
-        VITE_DATA_MODE: "${VITE_DATA_MODE:-real}"
+        VITE_DATA_MODE: "${VITE_DATA_MODE:-simulated}"
         VITE_SUPABASE_URL: "${VITE_SUPABASE_URL:-}"
         VITE_SUPABASE_ANON_KEY: "${VITE_SUPABASE_ANON_KEY:-}"
     container_name: frontend-arandanos

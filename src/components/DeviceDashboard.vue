@@ -124,6 +124,7 @@
                 <tr>
                   <th>Dispositivo</th>
                   <th>Valor Disparador</th>
+                  <th>Tipo de Alerta</th>
                   <th>pH</th>
                   <th>Temperatura</th>
                   <th>Conductividad</th>
@@ -135,20 +136,21 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="alert in visibleAlerts" :key="alert.id">
+                <tr v-for="alert in visibleAlerts" :key="alert.id" :class="{ 'alert-danger': alert.alertType === 'danger', 'alert-warning': alert.alertType === 'warning' }">
                   <td>{{ alert.deviceName }}</td>
                   <td><strong>{{ alert.triggerField }}: {{ alert.triggerValue }}</strong></td>
+                  <td><strong>{{ alert.alertType === 'danger' ? '🔴 Peligro' : '🟡 Advertencia' }}</strong></td>
                   <td>{{ alert.ph }}</td>
                   <td>{{ alert.temperature }}</td>
                   <td>{{ alert.conductivity }}</td>
-                  <td>{{ alert.battery }}%</td>
+                  <td>{{ Math.floor(alert.battery) }}%</td>
                   <td>{{ alert.date }}</td>
                   <td>{{ alert.time }}</td>
                   <td>{{ alert.telegramStatus }}</td>
                   <td>{{ alert.emailStatus }}</td>
                 </tr>
                 <tr v-if="visibleAlerts.length === 0">
-                  <td colspan="10" class="empty-cell">Sin alertas registradas para hoy.</td>
+                  <td colspan="11" class="empty-cell">Sin alertas registradas para hoy.</td>
                 </tr>
               </tbody>
             </table>
@@ -972,15 +974,39 @@ const createRecord = ({ ph, temperature, conductivity, timestamp }) => {
   
   let triggerField = null
   let triggerValue = null
+  let alertType = 'warning'
+  
+  // Determinar tipo de alerta (warning = cerca del límite, danger = muy afuera)
   if (phAlert) {
     triggerField = 'pH'
     triggerValue = safePh
+    const phMin = phLimits.safe_min ?? 0
+    const phMax = phLimits.safe_max ?? 14
+    const phRange = phMax - phMin
+    const warningMargin = phRange * 0.1
+    if (safePh < (phMin - warningMargin) || safePh > (phMax + warningMargin)) {
+      alertType = 'danger'
+    }
   } else if (tempAlert) {
     triggerField = 'Temperatura'
     triggerValue = safeTemperature
+    const tempMin = tempLimits.safe_min ?? 0
+    const tempMax = tempLimits.safe_max ?? 50
+    const tempRange = tempMax - tempMin
+    const warningMargin = tempRange * 0.1
+    if (safeTemperature < (tempMin - warningMargin) || safeTemperature > (tempMax + warningMargin)) {
+      alertType = 'danger'
+    }
   } else if (conductAlert) {
     triggerField = 'Conductividad'
     triggerValue = safeConductivity
+    const conductMin = conductLimits.safe_min ?? 0
+    const conductMax = conductLimits.safe_max ?? 3000
+    const conductRange = conductMax - conductMin
+    const warningMargin = conductRange * 0.1
+    if (safeConductivity < (conductMin - warningMargin) || safeConductivity > (conductMax + warningMargin)) {
+      alertType = 'danger'
+    }
   }
 
   const device = selectedDevice.value
@@ -999,7 +1025,8 @@ const createRecord = ({ ph, temperature, conductivity, timestamp }) => {
     emailStatus: IS_SIMULATED_MODE ? 'deshabilitado (simulado)' : (isAlert ? 'pendiente' : 'sin alerta'),
     isAlert,
     triggerField,
-    triggerValue
+    triggerValue,
+    alertType
   }
 }
 
@@ -2356,6 +2383,24 @@ onUnmounted(() => {
   color: #6b7280;
 }
 
+.alerts-table tbody tr.alert-danger {
+  background-color: #fee2e2;
+  border-left: 4px solid #dc2626;
+}
+
+.alerts-table tbody tr.alert-warning {
+  background-color: #fef3c7;
+  border-left: 4px solid #f59e0b;
+}
+
+.alerts-table tbody tr.alert-danger:hover {
+  background-color: #fecaca;
+}
+
+.alerts-table tbody tr.alert-warning:hover {
+  background-color: #fde68a;
+}
+
 .see-more-btn,
 .pdf-btn {
   margin-top: 0;
@@ -2787,6 +2832,24 @@ html[data-theme='dark'] .alerts-table td {
   background: #262a36;
   color: #e2e8f0;
   border-color: #3d4254;
+}
+
+html[data-theme='dark'] .alerts-table tbody tr.alert-danger {
+  background-color: #7f1d1d;
+  border-left-color: #ef4444;
+}
+
+html[data-theme='dark'] .alerts-table tbody tr.alert-warning {
+  background-color: #713f12;
+  border-left-color: #f97316;
+}
+
+html[data-theme='dark'] .alerts-table tbody tr.alert-danger:hover {
+  background-color: #991b1b;
+}
+
+html[data-theme='dark'] .alerts-table tbody tr.alert-warning:hover {
+  background-color: #854d0e;
 }
 
 html[data-theme='dark'] .alerts-table tbody tr:hover td {
