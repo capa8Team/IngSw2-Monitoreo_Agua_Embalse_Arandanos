@@ -2,8 +2,8 @@
   <div class="battery-indicator" :title="`Batería: ${batteryLevel}%`">
     <svg 
       viewBox="0 0 24 24" 
-      width="24" 
-      height="24" 
+      width="36" 
+      height="36" 
       fill="none" 
       stroke="currentColor" 
       stroke-width="2" 
@@ -71,9 +71,11 @@ const batteryClass = computed(() => {
 <style scoped>
 .battery-indicator {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  justify-content: center;
+  gap: 8px;
+  font-size: 14px;
   font-weight: 600;
 }
 

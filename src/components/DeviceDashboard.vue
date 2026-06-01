@@ -123,6 +123,7 @@
               <thead>
                 <tr>
                   <th>Dispositivo</th>
+                  <th>Valor Disparador</th>
                   <th>pH</th>
                   <th>Temperatura</th>
                   <th>Conductividad</th>
@@ -136,6 +137,7 @@
               <tbody>
                 <tr v-for="alert in visibleAlerts" :key="alert.id">
                   <td>{{ alert.deviceName }}</td>
+                  <td><strong>{{ alert.triggerField }}: {{ alert.triggerValue }}</strong></td>
                   <td>{{ alert.ph }}</td>
                   <td>{{ alert.temperature }}</td>
                   <td>{{ alert.conductivity }}</td>
@@ -146,7 +148,7 @@
                   <td>{{ alert.emailStatus }}</td>
                 </tr>
                 <tr v-if="visibleAlerts.length === 0">
-                  <td colspan="9" class="empty-cell">Sin alertas registradas para hoy.</td>
+                  <td colspan="10" class="empty-cell">Sin alertas registradas para hoy.</td>
                 </tr>
               </tbody>
             </table>
@@ -961,10 +963,25 @@ const createRecord = ({ ph, temperature, conductivity, timestamp }) => {
   const phLimits      = SENSOR_LIMITS.value?.ph           || {}
   const tempLimits    = SENSOR_LIMITS.value?.temperature  || {}
   const conductLimits = SENSOR_LIMITS.value?.conductivity || {}
-  const isAlert =
-    (safePh           < (phLimits.safe_min      ?? 0) || safePh           > (phLimits.safe_max      ?? 14))   ||
-    (safeTemperature  < (tempLimits.safe_min    ?? 0) || safeTemperature  > (tempLimits.safe_max    ?? 50))   ||
-    (safeConductivity < (conductLimits.safe_min ?? 0) || safeConductivity > (conductLimits.safe_max ?? 3000))
+  
+  const phAlert = safePh < (phLimits.safe_min ?? 0) || safePh > (phLimits.safe_max ?? 14)
+  const tempAlert = safeTemperature < (tempLimits.safe_min ?? 0) || safeTemperature > (tempLimits.safe_max ?? 50)
+  const conductAlert = safeConductivity < (conductLimits.safe_min ?? 0) || safeConductivity > (conductLimits.safe_max ?? 3000)
+  
+  const isAlert = phAlert || tempAlert || conductAlert
+  
+  let triggerField = null
+  let triggerValue = null
+  if (phAlert) {
+    triggerField = 'pH'
+    triggerValue = safePh
+  } else if (tempAlert) {
+    triggerField = 'Temperatura'
+    triggerValue = safeTemperature
+  } else if (conductAlert) {
+    triggerField = 'Conductividad'
+    triggerValue = safeConductivity
+  }
 
   const device = selectedDevice.value
   return {
@@ -980,7 +997,9 @@ const createRecord = ({ ph, temperature, conductivity, timestamp }) => {
     timestamp: now.getTime(),
     telegramStatus: IS_SIMULATED_MODE ? 'deshabilitado (simulado)' : (isAlert ? 'pendiente' : 'sin alerta'),
     emailStatus: IS_SIMULATED_MODE ? 'deshabilitado (simulado)' : (isAlert ? 'pendiente' : 'sin alerta'),
-    isAlert
+    isAlert,
+    triggerField,
+    triggerValue
   }
 }
 
@@ -1793,6 +1812,12 @@ onUnmounted(() => {
   padding: 16px;
   border-radius: 8px;
   border-left: 3px solid #d0d0d0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: 120px;
 }
 
 .info-card-label {
@@ -1802,12 +1827,14 @@ onUnmounted(() => {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 8px;
+  text-align: center;
 }
 
 .info-card-value {
   font-size: 16px;
   color: #333;
   font-weight: 600;
+  text-align: center;
 }
 
 .info-card-value.connected {
@@ -1822,7 +1849,10 @@ onUnmounted(() => {
   font-weight: normal;
   color: inherit;
   display: flex;
+  justify-content: center;
   align-items: center;
+  width: 100%;
+  min-height: 80px;
 }
 
 .info-card-value.admin-role {
@@ -2687,14 +2717,21 @@ html[data-theme='dark'] .section-title {
 html[data-theme='dark'] .info-card {
   background: #2e3240;
   border-left-color: #4b5563;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 html[data-theme='dark'] .info-card-label {
   color: #94a3b8;
+  text-align: center;
 }
 
 html[data-theme='dark'] .info-card-value {
   color: #e2e8f0;
+  text-align: center;
 }
 
 html[data-theme='dark'] .info-card-value.connected {
@@ -2707,6 +2744,10 @@ html[data-theme='dark'] .info-card-value.disconnected {
 
 html[data-theme='dark'] .info-card-value.battery-card {
   color: inherit;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
 }
 
 html[data-theme='dark'] .info-card-value.admin-role {
