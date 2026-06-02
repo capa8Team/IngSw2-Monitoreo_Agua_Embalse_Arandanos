@@ -21,8 +21,13 @@ export async function fetchAccountsActivity({ days = 30 } = {}) {
 
   const body = await res.json().catch(() => ({}))
   if (!res.ok) {
-    const msg = body?.message || body?.detail || 'No se pudo cargar la actividad de cuentas'
-    throw new Error(typeof msg === 'string' ? msg : 'Acceso denegado')
+    const raw = body?.message ?? body?.detail
+    const msg = typeof raw === 'string'
+      ? raw
+      : Array.isArray(raw)
+        ? raw.map((x) => x?.msg || String(x)).join('. ')
+        : 'No se pudo cargar la actividad de cuentas'
+    throw new Error(msg)
   }
   return body
 }

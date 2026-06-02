@@ -73,11 +73,14 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     logger.exception("Unhandled error processing request")
-    log_service.log(
-        LogOrigin.DASHBOARD, LogLevel.FATAL, f"Excepción no controlada: {exc}",
-        component="api.exception", details={"path": request.url.path, "error_type": type(exc).__name__},
-        correlation_id=getattr(request.state, "correlation_id", None),
-    )
+    try:
+        log_service.log(
+            LogOrigin.DASHBOARD, LogLevel.FATAL, f"Excepción no controlada: {exc}",
+            component="api.exception", details={"path": request.url.path, "error_type": type(exc).__name__},
+            correlation_id=getattr(request.state, "correlation_id", None),
+        )
+    except Exception:
+        pass
     if API_PATH_PREFIX in request.url.path:
         return JSONResponse(status_code=500, content={"error": True, "message": "Error processing API request!"})
     return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})

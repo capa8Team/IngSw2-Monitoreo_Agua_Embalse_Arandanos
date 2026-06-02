@@ -3,6 +3,8 @@ from fastapi import APIRouter
 from services.mongodb import db, get_latest_sensor_reading, chile_now, to_chile_time
 from services.aws_iot import aws_iot_service
 from core.config import settings
+from db.database import engine
+from db.supabase_db import check_logs_db
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +33,10 @@ def get_diagnostics() -> dict:
             data_source = "real"
 
     iot = aws_iot_service.status
+    logs_db = check_logs_db(engine)
     return {
         "mongodb_connected": mongodb_connected,
+        "logs_db": logs_db,
         "data_source": data_source,
         "has_sensor_data": sensor_reading is not None,
         "arduino_connected": arduino_connected,
