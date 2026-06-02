@@ -8,7 +8,6 @@
 
       <div class="modal-body">
         <form @submit.prevent="handleSubmit">
-          <!-- Nombre -->
           <div class="form-group">
             <label for="device-name">Nombre del Dispositivo *</label>
             <input
@@ -21,7 +20,6 @@
             />
           </div>
 
-          <!-- Tipo de Dispositivo -->
           <div class="form-group">
             <label for="device-type">Tipo de Microcontrolador</label>
             <select v-model="formData.device_type" id="device-type" class="form-select">
@@ -32,7 +30,6 @@
             </select>
           </div>
 
-          <!-- Ubicación -->
           <div class="form-group">
             <label for="device-location">Ubicación (opcional)</label>
             <input
@@ -44,7 +41,6 @@
             />
           </div>
 
-          <!-- Arduino ID (si aplica) -->
           <div class="form-group">
             <label for="arduino-id">Identificador del dispositivo (opcional)</label>
             <input
@@ -59,7 +55,6 @@
             </small>
           </div>
 
-          <!-- Clave telemetría MQTT -->
           <div class="form-group">
             <label for="telemetry-key">Clave de telemetría MQTT (opcional)</label>
             <input
@@ -75,7 +70,6 @@
             </small>
           </div>
 
-          <!-- Topic MQTT -->
           <div class="form-group">
             <label for="device-topic">Topic MQTT *</label>
             <input
@@ -91,7 +85,6 @@
             </small>
           </div>
 
-          <!-- Botones -->
           <div class="form-actions">
             <button
               type="button"
@@ -111,7 +104,6 @@
           </div>
         </form>
 
-        <!-- Mensaje de Error -->
         <div v-if="errorMessage" class="alert alert-error">
           {{ errorMessage }}
         </div>
@@ -162,7 +154,7 @@ const showModal = computed({
 })
 
 const isFormValid = computed(() => {
-  return formData.value.name && formData.value.name.length > 0 && 
+  return formData.value.name && formData.value.name.length > 0 &&
          formData.value.topic && formData.value.topic.length > 0
 })
 
@@ -205,7 +197,6 @@ const handleSubmit = async () => {
   }
 }
 
-// Reset cuando se cierra/abre la modal
 watch(
   () => props.show,
   (newVal) => {
@@ -219,11 +210,8 @@ watch(
 <style scoped>
 .modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -232,28 +220,24 @@ watch(
 }
 
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .modal-content {
-  background: #1f2937;
+  background: #ffffff;
   border-radius: 8px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
-  max-width: 500px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12);
+  max-width: 520px;
   width: 90%;
   max-height: 90vh;
   overflow-y: auto;
-  animation: slideUp 0.3s ease;
+  animation: slideUp 0.25s ease;
 }
 
 @keyframes slideUp {
   from {
-    transform: translateY(20px);
+    transform: translateY(16px);
     opacity: 0;
   }
   to {
@@ -266,153 +250,146 @@ watch(
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px;
-  border-bottom: 1px solid #374151;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  padding: 14px 16px;
+  border-bottom: 2px solid #66bb6a;
+  background: #ffffff;
 }
 
 .modal-header h3 {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 16px;
   font-weight: 600;
+  color: #333333;
 }
 
 .close-btn {
-  background: none;
-  border: none;
-  font-size: 28px;
-  cursor: pointer;
-  color: white;
-  padding: 0;
   width: 32px;
   height: 32px;
+  border: 1px solid #e0e0e0;
+  background: #ffffff;
+  border-radius: 6px;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: #333333;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
-  transition: background-color 0.2s;
+  transition: all 0.2s ease;
 }
 
 .close-btn:hover {
-  background-color: rgba(255, 255, 255, 0.1);
+  background: #f0f0f0;
+  border-color: #66bb6a;
 }
 
 .modal-body {
-  padding: 20px;
+  padding: 16px;
 }
 
 .form-group {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .form-group label {
   display: block;
   margin-bottom: 6px;
-  font-weight: 500;
-  color: #e5e7eb;
-  font-size: 0.95rem;
+  font-weight: 600;
+  color: #4b5563;
+  font-size: 12px;
 }
 
 .form-input,
 .form-select {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid #4b5563;
+  border: 1px solid #d1d5db;
   border-radius: 6px;
-  font-size: 1rem;
+  font-size: 14px;
   font-family: inherit;
+  background-color: #ffffff;
+  color: #1f2937;
   transition: border-color 0.2s, box-shadow 0.2s;
-  background-color: #374151;
-  color: #f3f4f6;
+  box-sizing: border-box;
 }
 
 .form-input:focus,
 .form-select:focus {
   outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+  border-color: #66bb6a;
+  box-shadow: 0 0 0 2px rgba(102, 187, 106, 0.2);
 }
 
 .help-text {
   display: block;
   margin-top: 4px;
-  color: #9ca3af;
-  font-size: 0.85rem;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .form-actions {
   display: flex;
-  gap: 12px;
-  margin-top: 24px;
+  gap: 8px;
+  margin-top: 20px;
   justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .btn {
-  padding: 10px 16px;
-  border: none;
+  min-width: 120px;
+  height: 36px;
+  padding: 0 14px;
   border-radius: 6px;
-  font-size: 1rem;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
+  transition: all 0.2s ease;
+  font-family: inherit;
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  border: 1px solid #66bb6a;
+  background: #66bb6a;
+  color: #ffffff;
 }
 
 .btn-primary:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  background: #558a5a;
+  border-color: #558a5a;
 }
 
 .btn-primary:disabled {
-  opacity: 0.5;
+  opacity: 0.65;
   cursor: not-allowed;
 }
 
 .btn-secondary {
-  background: #4b5563;
-  color: #e5e7eb;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #374151;
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: #5a6575;
+  background: #f3f4f6;
+  border-color: #9ca3af;
 }
 
 .btn-secondary:disabled {
-  opacity: 0.5;
+  opacity: 0.65;
   cursor: not-allowed;
 }
 
 .alert {
-  margin-top: 16px;
-  padding: 12px 16px;
+  margin-top: 14px;
+  padding: 10px 12px;
   border-radius: 6px;
-  font-size: 0.95rem;
-  animation: slideDown 0.3s ease;
-}
-
-@keyframes slideDown {
-  from {
-    transform: translateY(-10px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
+  font-size: 13px;
 }
 
 .alert-error {
-  background: #7f1d1d;
-  color: #fecaca;
-  border: 1px solid #dc2626;
+  background: #ffebee;
+  color: #c62828;
+  border: 1px solid #ef9a9a;
 }
 </style>

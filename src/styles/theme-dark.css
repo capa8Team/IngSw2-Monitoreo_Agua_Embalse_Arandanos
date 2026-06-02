@@ -1074,3 +1074,134 @@ html[data-theme='dark'] .primary-btn:hover:not(:disabled) {
 html[data-theme='dark'] .primary-btn:disabled {
   opacity: 0.55;
 }
+
+/* AdminDevicesSection — botones detectar / agregar */
+html[data-theme='dark'] .btn-detect {
+  background: #22252e;
+  border-color: #4ade80;
+  color: #86efac;
+}
+
+html[data-theme='dark'] .btn-detect:hover:not(:disabled) {
+  background: #1a2e22;
+}
+
+html[data-theme='dark'] .btn-add {
+  background: #15803d;
+  border-color: #22c55e;
+  color: #ffffff;
+}
+
+html[data-theme='dark'] .btn-add:hover:not(:disabled) {
+  background: #16a34a;
+  border-color: #22c55e;
+}
+
+/* Modales de dispositivos (AddDeviceModal / DeviceDetectionModal) */
+html[data-theme='dark'] .modal-content {
+  background: #262a36;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+}
+
+html[data-theme='dark'] .modal-header {
+  background: #22252e;
+  border-bottom-color: #4ade80;
+}
+
+html[data-theme='dark'] .modal-header h3 {
+  color: #f1f5f9;
+}
+
+html[data-theme='dark'] .close-btn {
+  background: #2e3240;
+  border-color: #4b5563;
+  color: #e2e8f0;
+}
+
+html[data-theme='dark'] .close-btn:hover {
+  background: #343845;
+  border-color: #4ade80;
+}
+
+html[data-theme='dark'] .form-group label,
+html[data-theme='dark'] .help-section h4 {
+  color: #e2e8f0;
+}
+
+html[data-theme='dark'] .form-input,
+html[data-theme='dark'] .form-select {
+  background: #1a1d26;
+  border-color: #4b5563;
+  color: #f1f5f9;
+}
+
+html[data-theme='dark'] .form-input:focus,
+html[data-theme='dark'] .form-select:focus {
+  border-color: #4ade80;
+  box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.2);
+}
+
+html[data-theme='dark'] .help-text,
+html[data-theme='dark'] .help-section ul,
+html[data-theme='dark'] .empty-message,
+html[data-theme='dark'] .device-status {
+  color: #94a3b8;
+}
+
+html[data-theme='dark'] .btn-secondary {
+  background: #2e3240;
+  border-color: #4b5563;
+  color: #e2e8f0;
+}
+
+html[data-theme='dark'] .btn-secondary:hover:not(:disabled) {
+  background: #343845;
+}
+
+html[data-theme='dark'] .btn-primary,
+html[data-theme='dark'] .btn-register {
+  background: #15803d;
+  border-color: #22c55e;
+  color: #ffffff;
+}
+
+html[data-theme='dark'] .btn-primary:hover:not(:disabled),
+html[data-theme='dark'] .btn-register:hover:not(:disabled) {
+  background: #16a34a;
+}
+
+html[data-theme='dark'] .status-message,
+html[data-theme='dark'] .alert-success {
+  background: #1a2e22;
+  color: #86efac;
+  border-color: #22c55e;
+}
+
+html[data-theme='dark'] .alert-error {
+  background: #3f1d1d;
+  color: #fecaca;
+  border-color: #ef4444;
+}
+
+html[data-theme='dark'] .device-item {
+  background: #1a1d26;
+  border-color: #3d4254;
+}
+
+html[data-theme='dark'] .device-item:hover {
+  background: #1a2e22;
+  border-color: #4ade80;
+}
+
+html[data-theme='dark'] .device-id {
+  color: #f1f5f9;
+}
+
+html[data-theme='dark'] .help-section {
+  background: #1a1d26;
+  border-color: #3d4254;
+}
+
+html[data-theme='dark'] .scanning-text {
+  color: #86efac;
+}

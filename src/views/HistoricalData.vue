@@ -5,20 +5,30 @@
         <ThemeToggleButton />
         <button class="back-btn" @click="router.back()">←</button>
         <h1>Datos Históricos</h1>
+        <span class="source-badge" :class="isSimulatedMode ? 'source-simulated' : 'source-real'">
+          {{ isSimulatedMode ? '⚙️ Datos simulados' : '📡 Datos en vivo' }}
+        </span>
       </div>
-      <button v-if="isUserAdmin" class="pdf-btn" @click="showPdfModal = true">Descargar PDF</button>
+      <button v-if="isUserAdmin" class="pdf-btn" @click="openPdfModal">Descargar PDF</button>
     </header>
 
     <main class="history-content">
       <SensorChart sensorKey="ph"           v-model:period="phPeriod"   :chartData="chartData.ph"           :stats="chartStats.ph"           />
       <SensorChart sensorKey="temperature"  v-model:period="tempPeriod" :chartData="chartData.temperature"  :stats="chartStats.temperature"  />
       <SensorChart sensorKey="conductivity" v-model:period="condPeriod" :chartData="chartData.conductivity" :stats="chartStats.conductivity" />
-      <MeasurementsTable :rows="measurementRows" />
+      <MeasurementsTable
+        :rows="measurementRows"
+        :total-rows="tableTotal"
+        :current-page="tablePage"
+        :loading="tableLoading"
+        @page-change="onTablePageChange"
+        @filters-change="onTableFiltersChange"
+      />
     </main>
 
     <PdfExportModal
       v-if="showPdfModal"
-      :measurementRows="measurementRows"
+      :measurementRows="exportRows"
       :deviceOptions="deviceOptions"
       @close="showPdfModal = false"
     />
@@ -40,16 +50,23 @@ const isUserAdmin = computed(() => isAdminRole(localStorage.getItem('userRole'))
 const showPdfModal = ref(false)
 
 const {
-  measurementRows, deviceOptions,
+  measurementRows, exportRows, deviceOptions, tableTotal, tablePage, tableLoading,
+  isSimulatedMode,
   phPeriod, tempPeriod, condPeriod,
   chartData, chartStats,
   refreshHistorical,
+  onTablePageChange, onTableFiltersChange, prepareExportRows,
   startPolling, stopPolling,
 } = useHistoricalData()
 
+async function openPdfModal() {
+  await prepareExportRows()
+  showPdfModal.value = true
+}
+
 onMounted(async () => {
   await nextTick()
-  await refreshHistorical()
+  await refreshHistorical({ full: true })
   startPolling()
 })
 
@@ -88,6 +105,25 @@ onBeforeUnmount(stopPolling)
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
+}
+
+.source-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.source-real {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.source-simulated {
+  background: #fff3e0;
+  color: #e65100;
 }
 
 .back-btn {

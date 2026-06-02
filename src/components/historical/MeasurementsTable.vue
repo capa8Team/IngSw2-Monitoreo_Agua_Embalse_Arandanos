@@ -38,7 +38,7 @@
         </label>
       </template>
       <span v-if="filter.mode !== 'all' || filter.sensor !== 'all'" class="table-filter-count">
-        {{ filteredRows.length }} registro(s)
+        {{ totalRows }} registro(s)
       </span>
     </div>
 
@@ -55,10 +55,13 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-if="visibleRows.length === 0">
+          <tr v-if="loading">
+            <td colspan="6" class="no-data">Cargando mediciones…</td>
+          </tr>
+          <tr v-else-if="visibleRows.length === 0">
             <td colspan="6" class="no-data">
               {{
-                rows.length === 0
+                totalRows === 0
                   ? 'No hay datos disponibles.'
                   : 'No hay mediciones para el filtro seleccionado.'
               }}
@@ -129,7 +132,7 @@
         </div>
       </div>
 
-      <span class="pagination-records">({{ filteredRows.length }} registros totales)</span>
+      <span class="pagination-records">({{ totalRows }} registros totales)</span>
     </div>
   </section>
 </template>
@@ -139,12 +142,16 @@ import { ref, reactive, computed, watch } from 'vue'
 import { localDateKey } from '../../utils/sensorUtils.js'
 
 const props = defineProps({
-  rows: { type: Array, required: true },
+  rows:        { type: Array, required: true },
+  totalRows:   { type: Number, default: 0 },
+  currentPage: { type: Number, default: 1 },
+  loading:     { type: Boolean, default: false },
 })
+
+const emit = defineEmits(['page-change', 'filters-change'])
 
 const ITEMS_PER_PAGE = 10
 
-const currentPage        = ref(1)
 const showExpandedPages  = ref(false)
 const jumpToPageValue    = ref(null)
 
@@ -156,23 +163,9 @@ const filter = reactive({
   endDate:   localDateKey(new Date()),
 })
 
-const filteredRows = computed(() =>
-  props.rows.filter(row => {
-    if (filter.sensor !== 'all' && row.sensorKey !== filter.sensor) return false
-    if (filter.mode === 'all') return true
-    if (filter.mode === 'day') return row.dateKey === filter.day
-    const start = filter.startDate || '0000-01-01'
-    const end   = filter.endDate   || '9999-12-31'
-    return row.dateKey >= start && row.dateKey <= end
-  })
-)
+const totalPages = computed(() => Math.ceil(props.totalRows / ITEMS_PER_PAGE) || 1)
 
-const totalPages = computed(() => Math.ceil(filteredRows.value.length / ITEMS_PER_PAGE) || 1)
-
-const visibleRows = computed(() => {
-  const start = (currentPage.value - 1) * ITEMS_PER_PAGE
-  return filteredRows.value.slice(start, start + ITEMS_PER_PAGE)
-})
+const visibleRows = computed(() => props.rows)
 
 const visiblePaginationPages = computed(() =>
   Array.from({ length: Math.min(3, totalPages.value) }, (_, i) => i + 1)
@@ -191,16 +184,28 @@ const isValidPageJump = computed(() =>
 
 watch(
   () => [filter.mode, filter.day, filter.startDate, filter.endDate, filter.sensor],
-  () => { currentPage.value = 1 }
+  () => {
+    emit('filters-change', { ...filter })
+  }
 )
 
-function goToPage(page)            { currentPage.value = Math.max(1, Math.min(page, totalPages.value)) }
-function nextPage()                { if (currentPage.value < totalPages.value) currentPage.value++ }
-function prevPage()                { if (currentPage.value > 1) { currentPage.value--; showExpandedPages.value = false } }
-function toggleExpandedPagination(){ showExpandedPages.value = !showExpandedPages.value }
+function goToPage(page) {
+  const next = Math.max(1, Math.min(page, totalPages.value))
+  emit('page-change', next)
+}
+function nextPage() {
+  if (props.currentPage < totalPages.value) emit('page-change', props.currentPage + 1)
+}
+function prevPage() {
+  if (props.currentPage > 1) {
+    emit('page-change', props.currentPage - 1)
+    showExpandedPages.value = false
+  }
+}
+function toggleExpandedPagination() { showExpandedPages.value = !showExpandedPages.value }
 function jumpToPage() {
   if (isValidPageJump.value) {
-    currentPage.value     = jumpToPageValue.value
+    emit('page-change', jumpToPageValue.value)
     jumpToPageValue.value = null
     showExpandedPages.value = false
   }

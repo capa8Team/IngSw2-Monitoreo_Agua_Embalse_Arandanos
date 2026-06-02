@@ -75,6 +75,28 @@ except (ConnectionFailure, Exception) as e:
     mongo_client = None
     db = None
 
+HISTORICAL_MAX_LIMIT = 2000
+
+
+def ensure_sensor_indexes() -> None:
+    """Índices para consultas históricas por tiempo y dispositivo."""
+    if db is None:
+        return
+    try:
+        collection = db["sensor_readings"]
+        collection.create_index([("timestamp", -1)], name="timestamp_desc")
+        collection.create_index(
+            [("arduino_id", 1), ("timestamp", -1)],
+            name="arduino_timestamp_desc",
+        )
+        logger.info("Índices de sensor_readings verificados")
+    except Exception as e:
+        logger.warning("No se pudieron crear índices en sensor_readings: %s", e)
+
+
+if db is not None:
+    ensure_sensor_indexes()
+
 # ============================================================================
 # LÓGICA DE NEGOCIO Y BASE DE DATOS
 # ============================================================================
@@ -146,18 +168,65 @@ def get_latest_sensor_reading(arduino_id: str | None = None) -> Optional[dict]:
         return normalize_sensor_document(simulated_data_store[-1])
     return None
 
-def get_sensor_readings_history(limit: int = 100) -> list[dict]:
+def _build_readings_query(
+    since: datetime | None = None,
+    until: datetime | None = None,
+    arduino_id: str | None = None,
+) -> dict:
+    query: dict = {}
+    ts_filter: dict = {}
+    if since is not None:
+        ts_filter["$gte"] = since
+    if until is not None:
+        ts_filter["$lte"] = until
+    if ts_filter:
+        query["timestamp"] = ts_filter
+    if arduino_id:
+        query["arduino_id"] = arduino_id
+    return query
+
+
+def query_sensor_readings(
+    *,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    arduino_id: str | None = None,
+    limit: int = 500,
+) -> list[dict]:
+    """Consulta acotada por rango temporal (orden descendente por timestamp)."""
+    limit = max(1, min(limit, HISTORICAL_MAX_LIMIT))
     if db is not None:
         try:
-            readings = list(db["sensor_readings"].find().sort("_id", -1).limit(limit))
+            query = _build_readings_query(since, until, arduino_id)
+            readings = list(
+                db["sensor_readings"]
+                .find(query)
+                .sort("timestamp", -1)
+                .limit(limit)
+            )
             return [normalize_sensor_document(reading) for reading in readings]
         except Exception as e:
-            logger.error("Error leyendo historial de MongoDB: %s", e)
+            logger.error("Error leyendo lecturas acotadas de MongoDB: %s", e)
 
-    if simulated_data_store:
-        readings = simulated_data_store[-limit:][::-1]
-        return [normalize_sensor_document(reading) for reading in readings]
-    return []
+    rows = simulated_data_store
+    if since is not None or until is not None or arduino_id:
+        filtered = []
+        for reading in rows:
+            ts = to_chile_time(reading.get("timestamp", utc_now()))
+            if since is not None and ts < since:
+                continue
+            if until is not None and ts > until:
+                continue
+            if arduino_id and reading.get("arduino_id") != arduino_id:
+                continue
+            filtered.append(reading)
+        rows = filtered
+    rows = rows[-limit:][::-1]
+    return [normalize_sensor_document(reading) for reading in rows]
+
+
+def get_sensor_readings_history(limit: int = 100) -> list[dict]:
+    return query_sensor_readings(limit=limit)
 
 def update_dashboard_state_from_mongodb(arduino_id: str | None = None) -> Optional[DashboardResponse]:
     global dashboard_state

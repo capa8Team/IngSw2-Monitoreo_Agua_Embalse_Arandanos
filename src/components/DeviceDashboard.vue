@@ -123,6 +123,8 @@
               <thead>
                 <tr>
                   <th>Dispositivo</th>
+                  <th>Valor Disparador</th>
+                  <th>Tipo de Alerta</th>
                   <th>pH</th>
                   <th>Temperatura</th>
                   <th>Conductividad</th>
@@ -134,19 +136,21 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="alert in visibleAlerts" :key="alert.id">
+                <tr v-for="alert in visibleAlerts" :key="alert.id" :class="{ 'alert-danger': alert.alertType === 'danger', 'alert-warning': alert.alertType === 'warning' }">
                   <td>{{ alert.deviceName }}</td>
+                  <td><strong>{{ alert.triggerField }}: {{ alert.triggerValue }}</strong></td>
+                  <td><strong>{{ alert.alertType === 'danger' ? '🔴 Peligro' : '🟡 Advertencia' }}</strong></td>
                   <td>{{ alert.ph }}</td>
                   <td>{{ alert.temperature }}</td>
                   <td>{{ alert.conductivity }}</td>
-                  <td>{{ alert.battery }}%</td>
+                  <td>{{ Math.floor(alert.battery) }}%</td>
                   <td>{{ alert.date }}</td>
                   <td>{{ alert.time }}</td>
                   <td>{{ alert.telegramStatus }}</td>
                   <td>{{ alert.emailStatus }}</td>
                 </tr>
                 <tr v-if="visibleAlerts.length === 0">
-                  <td colspan="9" class="empty-cell">Sin alertas registradas para hoy.</td>
+                  <td colspan="11" class="empty-cell">Sin alertas registradas para hoy.</td>
                 </tr>
               </tbody>
             </table>
@@ -961,10 +965,52 @@ const createRecord = ({ ph, temperature, conductivity, timestamp }) => {
   const phLimits      = SENSOR_LIMITS.value?.ph           || {}
   const tempLimits    = SENSOR_LIMITS.value?.temperature  || {}
   const conductLimits = SENSOR_LIMITS.value?.conductivity || {}
-  const isAlert =
-    (safePh           < (phLimits.safe_min      ?? 0) || safePh           > (phLimits.safe_max      ?? 14))   ||
-    (safeTemperature  < (tempLimits.safe_min    ?? 0) || safeTemperature  > (tempLimits.safe_max    ?? 50))   ||
-    (safeConductivity < (conductLimits.safe_min ?? 0) || safeConductivity > (conductLimits.safe_max ?? 3000))
+  
+  const phAlert = safePh < (phLimits.safe_min ?? 0) || safePh > (phLimits.safe_max ?? 14)
+  const tempAlert = safeTemperature < (tempLimits.safe_min ?? 0) || safeTemperature > (tempLimits.safe_max ?? 50)
+  const conductAlert = safeConductivity < (conductLimits.safe_min ?? 0) || safeConductivity > (conductLimits.safe_max ?? 3000)
+  
+  const isAlert = phAlert || tempAlert || conductAlert
+  
+  let triggerField = null
+  let triggerValue = null
+  let alertType = 'warning'
+  
+  // Determinar tipo de alerta basándose en los rangos warning y danger
+  if (phAlert) {
+    triggerField = 'pH'
+    triggerValue = safePh
+    const warningMin = phLimits.warning_min ?? 0
+    const warningMax = phLimits.warning_max ?? 14
+    const warningMinSup = phLimits.warning_min_sup ?? 0
+    const warningMaxSup = phLimits.warning_max_sup ?? 14
+    
+    // Si está dentro de los rangos warning = Advertencia, sino = Peligro
+    const inWarningRange = (safePh >= warningMin && safePh <= warningMax) || (safePh >= warningMinSup && safePh <= warningMaxSup)
+    alertType = inWarningRange ? 'warning' : 'danger'
+  } else if (tempAlert) {
+    triggerField = 'Temperatura'
+    triggerValue = safeTemperature
+    const warningMin = tempLimits.warning_min ?? 0
+    const warningMax = tempLimits.warning_max ?? 50
+    const warningMinSup = tempLimits.warning_min_sup ?? 0
+    const warningMaxSup = tempLimits.warning_max_sup ?? 50
+    
+    // Si está dentro de los rangos warning = Advertencia, sino = Peligro
+    const inWarningRange = (safeTemperature >= warningMin && safeTemperature <= warningMax) || (safeTemperature >= warningMinSup && safeTemperature <= warningMaxSup)
+    alertType = inWarningRange ? 'warning' : 'danger'
+  } else if (conductAlert) {
+    triggerField = 'Conductividad'
+    triggerValue = safeConductivity
+    const warningMin = conductLimits.warning_min ?? 0
+    const warningMax = conductLimits.warning_max ?? 3000
+    const warningMinSup = conductLimits.warning_min_sup ?? 0
+    const warningMaxSup = conductLimits.warning_max_sup ?? 3000
+    
+    // Si está dentro de los rangos warning = Advertencia, sino = Peligro
+    const inWarningRange = (safeConductivity >= warningMin && safeConductivity <= warningMax) || (safeConductivity >= warningMinSup && safeConductivity <= warningMaxSup)
+    alertType = inWarningRange ? 'warning' : 'danger'
+  }
 
   const device = selectedDevice.value
   return {
@@ -980,7 +1026,10 @@ const createRecord = ({ ph, temperature, conductivity, timestamp }) => {
     timestamp: now.getTime(),
     telegramStatus: IS_SIMULATED_MODE ? 'deshabilitado (simulado)' : (isAlert ? 'pendiente' : 'sin alerta'),
     emailStatus: IS_SIMULATED_MODE ? 'deshabilitado (simulado)' : (isAlert ? 'pendiente' : 'sin alerta'),
-    isAlert
+    isAlert,
+    triggerField,
+    triggerValue,
+    alertType
   }
 }
 
@@ -1519,9 +1568,8 @@ onMounted(async () => {
   }
 
   console.log('[FRONTEND] VITE_DATA_MODE:', DATA_MODE)
-  startSensorUpdates()
 
-  // Cargar configuración de 3 valores desde localStorage
+  // Cargar configuración de 3 valores desde localStorage PRIMERO
   const savedConfig = localStorage.getItem('sensorLimitsConfig')
   if (savedConfig) {
     try {
@@ -1533,6 +1581,9 @@ onMounted(async () => {
       console.error('Error al cargar configuración guardada:', e)
     }
   }
+
+  // Iniciar actualizaciones de sensores DESPUÉS de cargar configuración
+  startSensorUpdates()
 
   if (isAdmin.value) {
     await loadExistingUsers()
@@ -1793,6 +1844,12 @@ onUnmounted(() => {
   padding: 16px;
   border-radius: 8px;
   border-left: 3px solid #d0d0d0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: 120px;
 }
 
 .info-card-label {
@@ -1802,12 +1859,14 @@ onUnmounted(() => {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 8px;
+  text-align: center;
 }
 
 .info-card-value {
   font-size: 16px;
   color: #333;
   font-weight: 600;
+  text-align: center;
 }
 
 .info-card-value.connected {
@@ -1822,7 +1881,10 @@ onUnmounted(() => {
   font-weight: normal;
   color: inherit;
   display: flex;
+  justify-content: center;
   align-items: center;
+  width: 100%;
+  min-height: 80px;
 }
 
 .info-card-value.admin-role {
@@ -2326,6 +2388,24 @@ onUnmounted(() => {
   color: #6b7280;
 }
 
+.alerts-table tbody tr.alert-danger {
+  background-color: #fee2e2;
+  border-left: 4px solid #dc2626;
+}
+
+.alerts-table tbody tr.alert-warning {
+  background-color: #fef3c7;
+  border-left: 4px solid #f59e0b;
+}
+
+.alerts-table tbody tr.alert-danger:hover {
+  background-color: #fecaca;
+}
+
+.alerts-table tbody tr.alert-warning:hover {
+  background-color: #fde68a;
+}
+
 .see-more-btn,
 .pdf-btn {
   margin-top: 0;
@@ -2687,14 +2767,21 @@ html[data-theme='dark'] .section-title {
 html[data-theme='dark'] .info-card {
   background: #2e3240;
   border-left-color: #4b5563;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 html[data-theme='dark'] .info-card-label {
   color: #94a3b8;
+  text-align: center;
 }
 
 html[data-theme='dark'] .info-card-value {
   color: #e2e8f0;
+  text-align: center;
 }
 
 html[data-theme='dark'] .info-card-value.connected {
@@ -2707,6 +2794,10 @@ html[data-theme='dark'] .info-card-value.disconnected {
 
 html[data-theme='dark'] .info-card-value.battery-card {
   color: inherit;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
 }
 
 html[data-theme='dark'] .info-card-value.admin-role {
@@ -2746,6 +2837,24 @@ html[data-theme='dark'] .alerts-table td {
   background: #262a36;
   color: #e2e8f0;
   border-color: #3d4254;
+}
+
+html[data-theme='dark'] .alerts-table tbody tr.alert-danger {
+  background-color: #7f1d1d;
+  border-left-color: #ef4444;
+}
+
+html[data-theme='dark'] .alerts-table tbody tr.alert-warning {
+  background-color: #713f12;
+  border-left-color: #f97316;
+}
+
+html[data-theme='dark'] .alerts-table tbody tr.alert-danger:hover {
+  background-color: #991b1b;
+}
+
+html[data-theme='dark'] .alerts-table tbody tr.alert-warning:hover {
+  background-color: #854d0e;
 }
 
 html[data-theme='dark'] .alerts-table tbody tr:hover td {

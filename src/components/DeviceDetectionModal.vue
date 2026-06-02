@@ -2,7 +2,7 @@
   <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
     <div class="modal-content">
       <div class="modal-header">
-        <h3>🔍 Detectar Nuevos Microcontroladores</h3>
+        <h3>Detectar Nuevos Microcontroladores</h3>
         <button class="close-btn" @click="closeModal" aria-label="Cerrar">×</button>
       </div>
 
@@ -193,11 +193,8 @@ watch(
 <style scoped>
 .modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -211,19 +208,19 @@ watch(
 }
 
 .modal-content {
-  background: white;
+  background: #ffffff;
   border-radius: 8px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
-  max-width: 500px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12);
+  max-width: 520px;
   width: 90%;
   max-height: 90vh;
   overflow-y: auto;
-  animation: slideUp 0.3s ease;
+  animation: slideUp 0.25s ease;
 }
 
 @keyframes slideUp {
   from {
-    transform: translateY(20px);
+    transform: translateY(16px);
     opacity: 0;
   }
   to {
@@ -236,56 +233,56 @@ watch(
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px;
-  border-bottom: 1px solid #e5e7eb;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  padding: 14px 16px;
+  border-bottom: 2px solid #66bb6a;
+  background: #ffffff;
 }
 
 .modal-header h3 {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 16px;
   font-weight: 600;
+  color: #333333;
 }
 
 .close-btn {
-  background: none;
-  border: none;
-  font-size: 28px;
-  cursor: pointer;
-  color: white;
-  padding: 0;
   width: 32px;
   height: 32px;
+  border: 1px solid #e0e0e0;
+  background: #ffffff;
+  border-radius: 6px;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: #333333;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
-  transition: background-color 0.2s;
+  transition: all 0.2s ease;
 }
 
 .close-btn:hover {
-  background-color: rgba(255, 255, 255, 0.1);
+  background: #f0f0f0;
+  border-color: #66bb6a;
 }
 
 .modal-body {
-  padding: 20px;
+  padding: 16px;
 }
 
-/* Escaneando */
 .scanning-container {
   text-align: center;
-  padding: 40px 20px;
+  padding: 32px 16px;
 }
 
 .spinner {
-  width: 50px;
-  height: 50px;
-  border: 4px solid #e5e7eb;
-  border-top-color: #667eea;
+  width: 44px;
+  height: 44px;
+  border: 3px solid #e5e7eb;
+  border-top-color: #66bb6a;
   border-radius: 50%;
   animation: spin 1s linear infinite;
-  margin: 0 auto 20px;
+  margin: 0 auto 16px;
 }
 
 @keyframes spin {
@@ -293,58 +290,60 @@ watch(
 }
 
 .scanning-text {
-  color: #667eea;
-  font-weight: 500;
+  color: #2e7d32;
+  font-weight: 600;
+  font-size: 14px;
   margin: 0;
 }
 
-/* Dispositivos Encontrados */
 .devices-container {
   animation: fadeIn 0.3s ease;
 }
 
 .status-message {
-  color: #065f46;
-  background: #d1fae5;
-  padding: 12px 16px;
+  color: #2e7d32;
+  background: #e8f5e9;
+  padding: 10px 12px;
   border-radius: 6px;
-  margin-bottom: 20px;
-  border-left: 4px solid #10b981;
+  margin-bottom: 16px;
+  border-left: 4px solid #66bb6a;
+  font-size: 13px;
 }
 
 .devices-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: 10px;
+  margin-bottom: 16px;
 }
 
 .device-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 10px;
   padding: 12px;
   border: 1px solid #e5e7eb;
   border-radius: 6px;
-  background: #f9fafb;
-  transition: all 0.2s;
+  background: #f8fafc;
+  transition: all 0.2s ease;
 }
 
 .device-item:hover {
-  border-color: #667eea;
-  background: #f3f4f6;
-  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
+  border-color: #66bb6a;
+  background: #f1f8f2;
 }
 
 .device-info {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex: 1;
+  min-width: 0;
 }
 
 .device-icon {
-  font-size: 24px;
+  font-size: 20px;
 }
 
 .device-details {
@@ -353,149 +352,154 @@ watch(
 
 .device-id {
   margin: 0;
-  color: #1f2937;
+  color: #333333;
   font-weight: 600;
   word-break: break-all;
-  font-family: monospace;
-  font-size: 0.9rem;
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
 }
 
 .device-status {
   margin: 4px 0 0 0;
   color: #6b7280;
-  font-size: 0.85rem;
+  font-size: 12px;
 }
 
 .btn-register {
   white-space: nowrap;
   flex-shrink: 0;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 4px;
-  font-size: 0.9rem;
+  border: 1px solid #66bb6a;
+  background: #66bb6a;
+  color: #ffffff;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
+  font-family: inherit;
 }
 
 .btn-register:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  background: #558a5a;
+  border-color: #558a5a;
 }
 
 .btn-register:disabled {
-  opacity: 0.6;
+  opacity: 0.65;
   cursor: not-allowed;
 }
 
-/* Sin Dispositivos */
 .no-devices {
   text-align: center;
-  padding: 40px 20px;
+  padding: 24px 8px;
   animation: fadeIn 0.3s ease;
 }
 
 .empty-icon {
-  font-size: 48px;
-  margin: 0 0 16px 0;
+  font-size: 40px;
+  margin: 0 0 12px 0;
 }
 
 .empty-message {
   color: #6b7280;
-  margin: 0 0 24px 0;
-  font-size: 1.05rem;
+  margin: 0 0 20px 0;
+  font-size: 14px;
 }
 
 .help-section {
-  background: #fef3c7;
-  border: 1px solid #fbbf24;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
   border-radius: 6px;
-  padding: 16px;
-  margin-bottom: 20px;
+  padding: 14px;
+  margin-bottom: 16px;
   text-align: left;
 }
 
 .help-section h4 {
-  margin: 0 0 12px 0;
-  color: #92400e;
-  font-size: 1rem;
+  margin: 0 0 10px 0;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .help-section ul {
   margin: 0;
-  padding-left: 20px;
-  color: #78350f;
-  font-size: 0.95rem;
+  padding-left: 18px;
+  color: #6b7280;
+  font-size: 13px;
 }
 
 .help-section li {
   margin: 6px 0;
 }
 
-/* Acciones */
 .actions {
   display: flex;
-  gap: 12px;
-  justify-content: center;
+  gap: 8px;
+  justify-content: flex-end;
   flex-wrap: wrap;
 }
 
 .btn {
-  padding: 10px 16px;
-  border: none;
+  min-width: 120px;
+  height: 36px;
+  padding: 0 14px;
   border-radius: 6px;
-  font-size: 1rem;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
+  font-family: inherit;
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  border: 1px solid #66bb6a;
+  background: #66bb6a;
+  color: #ffffff;
 }
 
 .btn-primary:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  background: #558a5a;
+  border-color: #558a5a;
 }
 
 .btn-primary:disabled {
-  opacity: 0.5;
+  opacity: 0.65;
   cursor: not-allowed;
 }
 
 .btn-secondary {
-  background: #e5e7eb;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
   color: #374151;
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: #d1d5db;
+  background: #f3f4f6;
+  border-color: #9ca3af;
 }
 
 .btn-secondary:disabled {
-  opacity: 0.5;
+  opacity: 0.65;
   cursor: not-allowed;
 }
 
-/* Alertas */
 .alert {
-  margin-top: 16px;
-  padding: 12px 16px;
+  margin-top: 14px;
+  padding: 10px 12px;
   border-radius: 6px;
-  font-size: 0.95rem;
+  font-size: 13px;
   animation: slideDown 0.3s ease;
 }
 
 @keyframes slideDown {
   from {
-    transform: translateY(-10px);
+    transform: translateY(-8px);
     opacity: 0;
   }
   to {
@@ -505,14 +509,14 @@ watch(
 }
 
 .alert-error {
-  background: #fee;
-  color: #c33;
-  border: 1px solid #f99;
+  background: #ffebee;
+  color: #c62828;
+  border: 1px solid #ef9a9a;
 }
 
 .alert-success {
-  background: #d1fae5;
-  color: #065f46;
-  border: 1px solid #10b981;
+  background: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #a5d6a7;
 }
 </style>

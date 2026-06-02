@@ -2,8 +2,8 @@
   <div class="battery-indicator" :title="`Batería: ${batteryLevel}%`">
     <svg 
       viewBox="0 0 24 24" 
-      width="24" 
-      height="24" 
+      width="36" 
+      height="36" 
       fill="none" 
       stroke="currentColor" 
       stroke-width="2" 
@@ -51,7 +51,7 @@ const props = defineProps({
   }
 })
 
-const batteryLevel = computed(() => Math.min(100, Math.max(0, props.level)))
+const batteryLevel = computed(() => Math.round(Math.min(100, Math.max(0, props.level))))
 
 const batteryFillWidth = computed(() => {
   // El ancho máximo de la barra de carga es ~14 (desde x=3 hasta x=17)
@@ -71,9 +71,11 @@ const batteryClass = computed(() => {
 <style scoped>
 .battery-indicator {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  justify-content: center;
+  gap: 8px;
+  font-size: 14px;
   font-weight: 600;
 }
 

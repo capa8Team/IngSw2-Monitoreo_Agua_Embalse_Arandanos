@@ -159,43 +159,48 @@ defineExpose({
 <style scoped>
 .admin-buttons-container {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
   margin-bottom: 24px;
 }
 
 .btn {
-  padding: 10px 16px;
-  border: none;
-  border-radius: 6px;
-  font-weight: 600;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 13px;
   cursor: pointer;
-  transition: all 0.3s ease;
-  font-size: 14px;
+  transition: all 0.2s ease;
+  font-family: inherit;
 }
 
 .btn-detect {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  border: 1px solid #66bb6a;
+  background: #ffffff;
+  color: #2e7d32;
 }
 
 .btn-detect:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 12px rgba(102, 126, 234, 0.4);
+  background: #e8f5e9;
 }
 
 .btn-add {
-  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-  color: white;
+  border: 1px solid #66bb6a;
+  background: #66bb6a;
+  color: #ffffff;
 }
 
 .btn-add:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 12px rgba(245, 87, 108, 0.4);
+  background: #558a5a;
+  border-color: #558a5a;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(102, 187, 106, 0.25);
 }
 
 .btn:disabled {
-  opacity: 0.5;
+  opacity: 0.55;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 </style>
