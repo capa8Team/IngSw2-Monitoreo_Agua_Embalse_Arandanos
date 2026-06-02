@@ -2,14 +2,21 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
+from db.supabase_db import make_psycopg2_creator, resolve_supabase_db_url
+
 Base = declarative_base()
 
-SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL", "")
+SUPABASE_DB_URL = resolve_supabase_db_url()
 engine = None
 SessionLocal = None
 
 if SUPABASE_DB_URL:
-    engine = create_engine(SUPABASE_DB_URL, echo=False, pool_pre_ping=True)
+    engine = create_engine(
+        "postgresql+psycopg2://",
+        creator=make_psycopg2_creator(SUPABASE_DB_URL),
+        echo=False,
+        pool_pre_ping=True,
+    )
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 

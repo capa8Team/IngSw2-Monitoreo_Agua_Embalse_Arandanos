@@ -1,4 +1,6 @@
 <template>
+  <DashboardLoadingOverlay :show="isDashboardLoading" />
+
   <div v-if="currentView === 'devices'" class="devices-view">
     <DeviceList
       :devices-data="devices"
@@ -45,7 +47,7 @@
       </div>
     </header>
 
-    <main class="dashboard-content">
+    <main class="dashboard-content" :class="{ 'dashboard-content--loading': isDashboardLoading }">
       <section class="info-section">
         <h2 class="section-title">Información del Sistema</h2>
         <div class="info-grid">
@@ -673,9 +675,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import DeviceList from './DeviceList.vue'
+import DashboardLoadingOverlay from './DashboardLoadingOverlay.vue'
 import ThemeToggleButton from './ThemeToggleButton.vue'
 import SensorCard from './SensorCard.vue'
 import BatteryIndicator from './BatteryIndicator.vue'
@@ -796,6 +799,18 @@ let editingLimits = ref({
 const currentView = ref('devices')
 const previousView = ref(null)
 const selectedDeviceId = ref(null)
+const isDashboardLoading = ref(false)
+const MIN_DASHBOARD_LOADING_MS = 600
+let dashboardLoadSeq = 0
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const clearTelemetryForDevice = (deviceId) => {
+  if (!deviceId) return
+  const next = { ...telemetryByDeviceId.value }
+  delete next[deviceId]
+  telemetryByDeviceId.value = next
+}
 const devicesSectionRef = ref(null)
 const lastSync = ref('Sin datos del Arduino')
 const showAllTodayAlerts = ref(false)
@@ -1236,6 +1251,30 @@ const loadDashboardFromApi = async () => {
   lastSync.value = formatLastSync(dashboard.metadata?.lastSync)
 }
 
+const refreshDashboardView = async () => {
+  const deviceId = selectedDeviceId.value
+  if (!deviceId || currentView.value !== 'dashboard') return
+  if (isDashboardLoading.value) return
+
+  const seq = ++dashboardLoadSeq
+  isDashboardLoading.value = true
+  clearTelemetryForDevice(deviceId)
+  await nextTick()
+
+  const startedAt = Date.now()
+  try {
+    await loadDashboardFromApi()
+    if (seq !== dashboardLoadSeq || currentView.value !== 'dashboard') return
+    await loadHistoryFromApi()
+  } finally {
+    const remaining = MIN_DASHBOARD_LOADING_MS - (Date.now() - startedAt)
+    if (remaining > 0) await delay(remaining)
+    if (seq === dashboardLoadSeq && currentView.value === 'dashboard') {
+      isDashboardLoading.value = false
+    }
+  }
+}
+
 const selectDevice = (device) => {
   selectedDeviceId.value = device.id
   currentView.value = 'dashboard'
@@ -1306,6 +1345,7 @@ const openAccountActivityView = async () => {
 }
 
 const goBack = () => {
+  isDashboardLoading.value = false
   // Descartar cambios sin guardar cuando se regresa de la vista de configuración
   if (currentView.value === 'admin-alerts') {
     editingLimits.value = JSON.parse(JSON.stringify(SENSOR_LIMITS_CONFIG.value))
@@ -1506,14 +1546,11 @@ const startUsersAutoRefresh = () => {
 
 const updateSensorData = async () => {
   if (!selectedDeviceId.value) return
+  if (currentView.value !== 'dashboard') return
+  if (isDashboardLoading.value) return
 
   await loadDashboardFromApi()
-
-  if (currentView.value === 'dashboard' || currentView.value === 'history') {
-    await loadHistoryFromApi()
-  }
-
-  if (currentView.value !== 'dashboard') return
+  await loadHistoryFromApi()
   if (IS_SIMULATED_MODE) return
 
   const latestRecord = historyRecords.value[0]
@@ -1527,7 +1564,6 @@ const updateSensorData = async () => {
 
 const startSensorUpdates = () => {
   if (updateInterval) clearInterval(updateInterval)
-  updateSensorData()
   updateInterval = setInterval(updateSensorData, 2000)
 }
 
@@ -1547,6 +1583,16 @@ watch(currentView, (view) => {
   }
 })
 
+watch(
+  () => ({ view: currentView.value, deviceId: selectedDeviceId.value }),
+  async (current, previous) => {
+    if (current.view !== 'dashboard' || !current.deviceId) return
+    if (previous?.view === current.view && previous?.deviceId === current.deviceId) return
+    await refreshDashboardView()
+  },
+  { flush: 'post' },
+)
+
 watch(() => SENSOR_LIMITS_CONFIG.value,
   () => { hasUnsavedChanges.value = true },
   { deep: true }
@@ -1561,11 +1607,7 @@ onMounted(async () => {
   enforceAdminOnlyViews()
 
   await loadDevices()
-  if (devices.value.length > 0) {
-    selectedDeviceId.value = devices.value[0].id
-  } else {
-    selectedDeviceId.value = null
-  }
+  selectedDeviceId.value = null
 
   console.log('[FRONTEND] VITE_DATA_MODE:', DATA_MODE)
 
@@ -1598,10 +1640,16 @@ onUnmounted(() => {
 
 <style scoped>
 .dashboard {
+  position: relative;
   min-height: 100vh;
   background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%);
   display: flex;
   flex-direction: column;
+}
+
+.dashboard-content--loading {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .dashboard-header {

@@ -81,6 +81,25 @@ html[data-theme='dark'] .devices-view {
   min-height: 100dvh;
 }
 
+html[data-theme='dark'] .dashboard-loading-overlay {
+  background: rgba(18, 21, 32, 0.9);
+}
+
+html[data-theme='dark'] .dashboard-loading-card {
+  background: #262a36;
+  border-color: #3d4254;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+html[data-theme='dark'] .dashboard-loading-spinner {
+  border-color: #1a2e22;
+  border-top-color: #4ade80;
+}
+
+html[data-theme='dark'] .dashboard-loading-text {
+  color: #86efac;
+}
+
 html[data-theme='dark'] .dashboard-header,
 html[data-theme='dark'] .devices-header {
   background: #22252e;
