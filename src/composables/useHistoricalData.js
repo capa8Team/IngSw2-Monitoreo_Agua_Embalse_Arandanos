@@ -1,18 +1,38 @@
 import { ref, reactive, computed, watch } from 'vue'
 import {
-  flattenMeasurements,
   buildChartSeriesFromReadings,
   computeChartStats,
-  expandReadingsForRegisteredDevices,
-  readingsForCharts,
+  localDateKey,
 } from '../utils/sensorUtils.js'
-import { fetchSensorReadings, fetchActiveDevices } from '../services/historicalDataService.js'
+import {
+  fetchHistoricalReadings,
+  fetchHistoricalTable,
+  fetchHistoricalExportRows,
+  fetchActiveDevices,
+  fetchIncrementalReadings,
+  mergeHistoricalReadings,
+  getHistoricalDataSourceLabel,
+  IS_SIMULATED_MODE,
+  POLL_INTERVAL_MS,
+} from '../services/historicalDataService.js'
 
 export function useHistoricalData() {
-  const normalizedReadings = ref([])
-  const chartSourceReadings  = ref([])
-  const measurementRows      = ref([])
-  const registeredDevices    = ref([])
+  const chartSourceReadings = ref([])
+  const measurementRows       = ref([])
+  const tableTotal            = ref(0)
+  const tablePage             = ref(1)
+  const tableLoading          = ref(false)
+  const exportRows              = ref([])
+  const registeredDevices       = ref([])
+  const lastPollTimestamp       = ref(null)
+
+  const tableFilters = reactive({
+    sensor:    'all',
+    mode:      'all',
+    day:       localDateKey(new Date()),
+    startDate: localDateKey(new Date(Date.now() - 6 * 24 * 60 * 60 * 1000)),
+    endDate:   localDateKey(new Date()),
+  })
 
   const phPeriod   = ref('day')
   const tempPeriod = ref('day')
@@ -30,7 +50,6 @@ export function useHistoricalData() {
     conductivity: { labels: [], values: [] },
   })
 
-  /** Nombres en pantalla (Norte, Dispositivo 1, …) para el PDF. */
   const deviceOptions = computed(() =>
     registeredDevices.value
       .map((d) => String(d.name || '').trim())
@@ -38,21 +57,27 @@ export function useHistoricalData() {
       .sort((a, b) => a.localeCompare(b, 'es'))
   )
 
+  function tableQueryParams() {
+    const params = {
+      page:     tablePage.value,
+      pageSize: 10,
+      sensor:   tableFilters.sensor,
+    }
+    if (tableFilters.mode === 'day') {
+      params.dateFrom = tableFilters.day
+      params.dateTo   = tableFilters.day
+    } else if (tableFilters.mode === 'range') {
+      params.dateFrom = tableFilters.startDate || null
+      params.dateTo   = tableFilters.endDate || null
+    }
+    return params
+  }
+
   async function loadRegisteredDevices() {
     registeredDevices.value = await fetchActiveDevices()
   }
 
-  async function loadTableData() {
-    const records = await fetchSensorReadings()
-    const sorted = records.sort((a, b) => b.timestamp - a.timestamp)
-    const registered = registeredDevices.value
-
-    chartSourceReadings.value = readingsForCharts(sorted, registered)
-    normalizedReadings.value = expandReadingsForRegisteredDevices(sorted, registered)
-    measurementRows.value = flattenMeasurements(normalizedReadings.value)
-  }
-
-  function loadChartData(sensorKey, period) {
+  async function loadChartData(sensorKey, period) {
     const series = buildChartSeriesFromReadings(chartSourceReadings.value, sensorKey, period)
     chartData[sensorKey] = series
     chartStats[sensorKey] = computeChartStats(series.values, sensorKey)
@@ -66,20 +91,82 @@ export function useHistoricalData() {
     ])
   }
 
-  async function refreshHistorical() {
-    await loadRegisteredDevices()
-    await loadTableData()
+  async function loadChartReadings(full = false) {
+    if (full || !chartSourceReadings.value.length) {
+      chartSourceReadings.value = await fetchHistoricalReadings()
+      chartSourceReadings.value = mergeHistoricalReadings(
+        [],
+        chartSourceReadings.value,
+        registeredDevices.value,
+      )
+    } else if (lastPollTimestamp.value) {
+      const incoming = await fetchIncrementalReadings(
+        lastPollTimestamp.value,
+        registeredDevices.value,
+      )
+      if (incoming.length) {
+        chartSourceReadings.value = mergeHistoricalReadings(
+          chartSourceReadings.value,
+          incoming,
+          registeredDevices.value,
+        )
+      }
+    }
+    lastPollTimestamp.value = new Date()
     await loadAllChartData()
   }
 
-  watch(phPeriod,   p => loadChartData('ph', p))
-  watch(tempPeriod, p => loadChartData('temperature', p))
-  watch(condPeriod, p => loadChartData('conductivity', p))
+  async function loadTableData() {
+    tableLoading.value = true
+    try {
+      const result = await fetchHistoricalTable({
+        ...tableQueryParams(),
+        registeredDevices: registeredDevices.value,
+      })
+      measurementRows.value = result.rows
+      tableTotal.value = result.total
+      tablePage.value = result.page
+    } finally {
+      tableLoading.value = false
+    }
+  }
+
+  async function prepareExportRows() {
+    exportRows.value = await fetchHistoricalExportRows(registeredDevices.value)
+  }
+
+  async function refreshHistorical({ full = false } = {}) {
+    await loadRegisteredDevices()
+    await loadChartReadings(full)
+    await loadTableData()
+  }
+
+  async function onTablePageChange(page) {
+    tablePage.value = page
+    await loadTableData()
+  }
+
+  async function onTableFiltersChange(filters) {
+    Object.assign(tableFilters, filters)
+    tablePage.value = 1
+    await loadTableData()
+  }
+
+  watch(phPeriod,   (p) => loadChartData('ph', p))
+  watch(tempPeriod, (p) => loadChartData('temperature', p))
+  watch(condPeriod, (p) => loadChartData('conductivity', p))
 
   let refreshTimer = null
 
   function startPolling() {
-    refreshTimer = setInterval(() => refreshHistorical().catch(console.error), 5000)
+    refreshTimer = setInterval(async () => {
+      try {
+        await loadChartReadings(false)
+        await loadTableData()
+      } catch (err) {
+        console.error(err)
+      }
+    }, POLL_INTERVAL_MS)
   }
 
   function stopPolling() {
@@ -87,11 +174,14 @@ export function useHistoricalData() {
   }
 
   return {
-    normalizedReadings, chartSourceReadings, measurementRows,
+    measurementRows, exportRows, tableTotal, tablePage, tableLoading, tableFilters,
     deviceOptions, registeredDevices,
+    dataSourceLabel: getHistoricalDataSourceLabel(),
+    isSimulatedMode: IS_SIMULATED_MODE,
     phPeriod, tempPeriod, condPeriod,
     chartData, chartStats,
     loadTableData, loadAllChartData, loadChartData, refreshHistorical,
+    onTablePageChange, onTableFiltersChange, prepareExportRows,
     startPolling, stopPolling,
   }
 }

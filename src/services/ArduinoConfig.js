@@ -51,6 +51,68 @@ const generateSyntheticReading = (timestampMs = Date.now()) => {
   }
 }
 
+export const SIMULATED_HISTORICAL_DEVICE = 'simulador-arandanos'
+
+export function getSimulatedHistoricalDevices() {
+  return [{
+    id: 'simulated-historical',
+    name: SIMULATED_HISTORICAL_DEVICE,
+    arduino_id: SIMULATED_HISTORICAL_DEVICE,
+    active: true,
+  }]
+}
+
+/** Lecturas sintéticas acotadas para gráficos/tablas históricos (modo simulado). */
+export function buildSimulatedHistoricalReadings({
+  limit = 1500,
+  since = null,
+  until = null,
+  days = 7,
+} = {}) {
+  const now = Date.now()
+  const endMs = until instanceof Date ? until.getTime() : now
+  const startMs = since instanceof Date
+    ? since.getTime()
+    : endMs - Math.max(1, days) * 24 * 60 * 60 * 1000
+  const stepMs = 60_000
+  const readings = []
+
+  for (let t = endMs; t >= startMs && readings.length < limit; t -= stepMs) {
+    const sample = generateSyntheticReading(t)
+    readings.push({
+      device: SIMULATED_HISTORICAL_DEVICE,
+      timestamp: new Date(sample.timestamp),
+      ph: sample.ph,
+      temperature: sample.temperature,
+      conductivity: sample.conductivity,
+    })
+  }
+
+  return readings
+}
+
+/** Nuevas lecturas simuladas desde el último polling (modo simulado). */
+export function buildSimulatedIncrementalReadings(since, limit = 10) {
+  if (!(since instanceof Date)) return []
+  const sinceMs = since.getTime()
+  const now = Date.now()
+  if (now <= sinceMs) return []
+
+  const stepMs = 30_000
+  const readings = []
+  for (let t = now; t > sinceMs && readings.length < limit; t -= stepMs) {
+    const sample = generateSyntheticReading(t)
+    readings.push({
+      device: SIMULATED_HISTORICAL_DEVICE,
+      timestamp: new Date(sample.timestamp),
+      ph: sample.ph,
+      temperature: sample.temperature,
+      conductivity: sample.conductivity,
+    })
+  }
+  return readings
+}
+
 const buildSimulatedDashboard = () => {
   const reading = generateSyntheticReading(Date.now())
   const nowIso  = new Date(reading.timestamp).toISOString()
@@ -108,9 +170,13 @@ export const fetchDashboardData = async (apiUrl, arduinoId = null) => {
 
 export const fetchSensorHistory = async (limit = 100) => {
   if (IS_SIMULATED_MODE) {
-    const maxRows = Math.max(1, Number(limit) || 100)
-    const now     = Date.now()
-    return Array.from({ length: maxRows }, (_, i) => generateSyntheticReading(now - i * 60_000))
+    return buildSimulatedHistoricalReadings({ limit: Math.max(1, Number(limit) || 100) })
+      .map((r) => ({
+        ph: r.ph,
+        temperature: r.temperature,
+        conductivity: r.conductivity,
+        timestamp: r.timestamp.getTime(),
+      }))
   }
 
   try {
@@ -126,6 +192,10 @@ export const fetchSensorHistory = async (limit = 100) => {
 export default {
   DATA_MODE,
   IS_SIMULATED_MODE,
+  SIMULATED_HISTORICAL_DEVICE,
+  getSimulatedHistoricalDevices,
+  buildSimulatedHistoricalReadings,
+  buildSimulatedIncrementalReadings,
   fetchDashboardData,
   fetchSensorHistory,
 }

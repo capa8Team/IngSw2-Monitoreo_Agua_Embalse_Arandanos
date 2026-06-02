@@ -47,6 +47,30 @@ class SensorDataResponse(BaseModel):
     conductivity: float
     timestamp: datetime
     id: Optional[str] = None
+    arduino_id: Optional[str] = None
+
+
+class HistoricalTableRow(BaseModel):
+    key: str
+    device: str
+    sensorKey: str
+    sensorLabel: str
+    rawValue: float
+    measurementText: str
+    dateText: str
+    dateKey: str
+    timeText: str
+    timestamp: str
+    alertStatus: str
+    alertClass: str
+
+
+class HistoricalTableResponse(BaseModel):
+    rows: list[HistoricalTableRow]
+    total: int
+    page: int
+    page_size: int
+    has_more: bool
 
 # ============================================================================
 # PAYLOADS DE HARDWARE (ESP8266)
