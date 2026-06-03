@@ -53,9 +53,10 @@ OPENWEATHER_API_KEY=tu_clave_api_aqui
 ```
 
 **Ejemplo completo de .env:**
-```env
+
 # OpenWeather
 OPENWEATHER_API_KEY=
+
 
 # Otras configuraciones...
 MONGODB_URL=mongodb://admin:password@localhost:27017/?authSource=admin
