@@ -42,6 +42,20 @@
           </div>
 
           <div class="form-group">
+            <label for="device-city">Ciudad (para datos de clima)</label>
+            <input
+              id="device-city"
+              v-model.trim="formData.city"
+              type="text"
+              placeholder="Ej: Madrid, Buenos Aires"
+              class="form-input"
+            />
+            <small class="help-text">
+              Nombre de la ciudad donde está ubicado el dispositivo. Se usará para mostrar datos de clima en el dashboard.
+            </small>
+          </div>
+
+          <div class="form-group">
             <label for="arduino-id">Identificador del dispositivo (opcional)</label>
             <input
               id="arduino-id"
@@ -140,6 +154,7 @@ const formData = ref({
   name: '',
   device_type: 'ESP8266',
   location: '',
+  city: '',
   arduino_id: '',
   telemetry_key: '',
   topic: ''
@@ -170,6 +185,7 @@ const resetForm = () => {
     name: '',
     device_type: 'ESP8266',
     location: '',
+    city: '',
     arduino_id: '',
     telemetry_key: '',
     topic: ''

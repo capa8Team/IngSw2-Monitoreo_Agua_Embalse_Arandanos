@@ -28,6 +28,7 @@ from routers.diagnostics import router as diagnostics_router
 from routers.devices import router as devices_router
 from services.telegram import initialize_telegram, TelegramService
 from services.aws_iot import aws_iot_service
+from services.openweather import init_openweather
 from routers.logs_router import router as logs_router
 from routers.auth_jwt import router as auth_jwt_router
 from routers.admin_activity import router as admin_activity_router
@@ -91,6 +92,17 @@ async def startup_event():
     logger.info("[START] Aplicacion iniciando...")
     setup_fallback_logging()
     log_service.log(LogOrigin.DASHBOARD, LogLevel.INFO, "Iniciando API", component="system.startup")
+    
+    # Inicializar OpenWeather API
+    try:
+        openweather_api_key = settings.openweather_api_key or None
+        if openweather_api_key:
+            init_openweather(openweather_api_key)
+            logger.info("[OPENWEATHER] API inicializada correctamente")
+        else:
+            logger.warning("[OPENWEATHER] API key no configurada. Los datos de clima no estarán disponibles.")
+    except Exception as e:
+        logger.error("[OPENWEATHER] Error al inicializar OpenWeather API: %s", e)
     
     # Suscriptor AWS IoT Core (MQTT → MongoDB)
     try:

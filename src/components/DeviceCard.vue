@@ -20,6 +20,39 @@
       </div>
     </div>
 
+    <!-- Sección de Clima -->
+    <div v-if="device.city" class="weather-section">
+      <div v-if="weatherLoading" class="weather-loading">
+        <p>⏳ Cargando clima...</p>
+      </div>
+      <div v-else-if="weatherData" class="weather-info">
+        <div class="weather-header">
+          <span class="weather-emoji">{{ weatherEmoji }}</span>
+          <div class="weather-main">
+            <span class="weather-temp">{{ weatherData.temperature }}°C</span>
+            <span class="weather-description">{{ weatherData.description }}</span>
+          </div>
+        </div>
+        <div class="weather-details">
+          <div class="weather-detail-item">
+            <span class="detail-label">💧 Humedad:</span>
+            <span class="detail-value">{{ weatherData.humidity }}%</span>
+          </div>
+          <div class="weather-detail-item">
+            <span class="detail-label">💨 Viento:</span>
+            <span class="detail-value">{{ weatherData.wind_speed }} m/s</span>
+          </div>
+          <div class="weather-detail-item">
+            <span class="detail-label">📍 Ciudad:</span>
+            <span class="detail-value">{{ device.city }}</span>
+          </div>
+        </div>
+      </div>
+      <div v-else-if="weatherError" class="weather-error">
+        <p>⚠️ No se pudo cargar el clima</p>
+      </div>
+    </div>
+
     <div class="device-body">
       <div class="sensor-list">
         <div
@@ -50,7 +83,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import BatteryIndicator from './BatteryIndicator.vue'
 
 const props = defineProps({
@@ -74,6 +107,10 @@ const props = defineProps({
 
 defineEmits(['select', 'delete'])
 
+const weatherData = ref(null)
+const weatherLoading = ref(false)
+const weatherError = ref(false)
+
 const formatSensorValue = (value) => {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed.toFixed(2) : '--'
@@ -82,6 +119,23 @@ const formatSensorValue = (value) => {
 const batteryLevel = computed(() => {
   const level = props.device?.battery || props.device?.bateria
   return typeof level === 'number' ? level : 100
+})
+
+const weatherEmoji = computed(() => {
+  if (!weatherData.value?.icon) return '🌡️'
+  
+  const emojiMap = {
+    '01d': '☀️', '01n': '🌙',
+    '02d': '⛅', '02n': '☁️',
+    '03d': '☁️', '03n': '☁️',
+    '04d': '☁️', '04n': '☁️',
+    '09d': '🌧️', '09n': '🌧️',
+    '10d': '🌦️', '10n': '🌧️',
+    '11d': '⛈️', '11n': '⛈️',
+    '13d': '❄️', '13n': '❄️',
+    '50d': '🌫️', '50n': '🌫️'
+  }
+  return emojiMap[weatherData.value.icon] || '🌡️'
 })
 
 const normalizedSensors = computed(() => {
@@ -95,6 +149,40 @@ const normalizedSensors = computed(() => {
     { id: 'cond', name: 'Conductividad', value: sensors.conductivity, unit: 'µS/cm' }
   ]
 })
+
+// Cargar datos de clima cuando hay ciudad
+const fetchWeather = async () => {
+  if (!props.device?.city) {
+    weatherData.value = null
+    return
+  }
+
+  weatherLoading.value = true
+  weatherError.value = false
+
+  try {
+    const apiUrl = import.meta.env.VITE_API_URL || ''
+    const response = await fetch(`${apiUrl}/api/devices/weather/${encodeURIComponent(props.device.city)}`)
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    
+    const data = await response.json()
+    weatherData.value = data.weather
+  } catch (error) {
+    console.error('Error cargando clima:', error)
+    weatherError.value = true
+    weatherData.value = null
+  } finally {
+    weatherLoading.value = false
+  }
+}
+
+// Cargar clima cuando el componente se monta o cuando cambia la ciudad
+watch(() => props.device?.city, () => {
+  fetchWeather()
+}, { immediate: true })
 </script>
 
 <style scoped>
@@ -210,6 +298,88 @@ const normalizedSensors = computed(() => {
   color: #c62828;
 }
 
+/* Estilos para la sección de clima */
+.weather-section {
+  background: linear-gradient(135deg, #87CEEB 0%, #E0F6FF 100%);
+  padding: 12px;
+  border-radius: 8px;
+  border-left: 4px solid #4CAF50;
+}
+
+.weather-loading,
+.weather-error {
+  text-align: center;
+  color: #555;
+  font-size: 12px;
+  margin: 0;
+  padding: 8px 0;
+}
+
+.weather-error {
+  color: #d32f2f;
+}
+
+.weather-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.weather-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.weather-emoji {
+  font-size: 32px;
+}
+
+.weather-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.weather-temp {
+  font-size: 18px;
+  font-weight: 700;
+  color: #333;
+}
+
+.weather-description {
+  font-size: 12px;
+  color: #666;
+  text-transform: capitalize;
+}
+
+.weather-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.weather-detail-item {
+  background: rgba(255, 255, 255, 0.7);
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.detail-label {
+  font-weight: 600;
+  color: #666;
+}
+
+.detail-value {
+  color: #333;
+  font-weight: 700;
+}
+
 .device-body {
   padding: 12px 0;
   border-top: 1px solid #f0f0f0;
@@ -298,6 +468,72 @@ const normalizedSensors = computed(() => {
 
   .sensor-item {
     padding: 8px;
+  }
+
+  .weather-emoji {
+    font-size: 24px;
+  }
+
+  .weather-temp {
+    font-size: 16px;
+  }
+}
+
+/* Dark Mode */
+@media (prefers-color-scheme: dark) {
+  .device-card {
+    background: #2a2a2a;
+    border-color: #444;
+  }
+
+  .device-card:hover {
+    border-color: #66bb6a;
+  }
+
+  .device-name {
+    color: #e0e0e0;
+  }
+
+  .device-model {
+    color: #aaa;
+  }
+
+  .sensor-item {
+    background: #3a3a3a;
+  }
+
+  .sensor-name {
+    color: #999;
+  }
+
+  .sensor-value {
+    color: #e0e0e0;
+  }
+
+  .weather-section {
+    background: linear-gradient(135deg, #1e6b8f 0%, #2a5a7a 100%);
+  }
+
+  .weather-temp {
+    color: #e0e0e0;
+  }
+
+  .weather-description {
+    color: #aaa;
+  }
+
+  .weather-detail-item {
+    background: rgba(0, 0, 0, 0.3);
+  }
+
+  .detail-label {
+    color: #aaa;
+  }
+
+  .detail-value {
+    color: #e0e0e0;
+  }
+}
   }
 
   .sensor-value {

@@ -292,6 +292,7 @@ def create_device(
     name: str,
     device_type: str,
     location: str,
+    city: str = "",
     arduino_id: str | None = None,
     topic: str | None = None,
     telemetry_key: str | None = None,
@@ -313,6 +314,7 @@ def create_device(
             "name": name,
             "device_type": device_type,
             "location": location,
+            "city": city,
             "status": "unknown",
             "arduino_id": arduino_id,
             "telemetry_key": telemetry_key,
@@ -407,6 +409,7 @@ def update_device(
     device_id: str,
     name: str | None = None,
     location: str | None = None,
+    city: str | None = None,
     active: bool | None = None,
     arduino_id: str | None = None,
     telemetry_key: str | None = None,
@@ -424,6 +427,8 @@ def update_device(
             update_data["name"] = name
         if location is not None:
             update_data["location"] = location
+        if city is not None:
+            update_data["city"] = city
         if active is not None:
             update_data["active"] = active
         if arduino_id is not None:

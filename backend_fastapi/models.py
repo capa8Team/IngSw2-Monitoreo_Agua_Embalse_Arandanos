@@ -128,6 +128,7 @@ class Device(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     device_type: Literal["ESP8266", "Arduino", "STM32", "other"] = "ESP8266"
     location: str = Field(default="", max_length=200)
+    city: str = Field(default="", max_length=100, description="Ciudad para datos de clima OpenWeather")
     status: Literal["online", "offline", "unknown"] = "unknown"
     arduino_id: str | None = None
     telemetry_key: str | None = Field(
@@ -145,6 +146,7 @@ class DeviceCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, description="Nombre del dispositivo")
     device_type: Literal["ESP8266", "Arduino", "STM32", "other"] = Field(default="ESP8266", description="Tipo de microcontrolador")
     location: str = Field(default="", max_length=200, description="Ubicación o zona del dispositivo")
+    city: str = Field(default="", max_length=100, description="Ciudad para datos de clima OpenWeather")
     arduino_id: str | None = Field(default=None, description="ID del Arduino (auto-detectado)")
     telemetry_key: str | None = Field(
         default=None,
@@ -156,6 +158,7 @@ class DeviceCreate(BaseModel):
 class DeviceUpdate(BaseModel):
     name: str | None = Field(None, max_length=100)
     location: str | None = Field(None, max_length=200)
+    city: str | None = Field(None, max_length=100, description="Ciudad para datos de clima")
     arduino_id: str | None = Field(None, max_length=100)
     telemetry_key: str | None = Field(None, max_length=100)
     topic: str | None = Field(None, max_length=200)
@@ -166,6 +169,7 @@ class DeviceResponse(BaseModel):
     name: str
     device_type: str
     location: str
+    city: str
     status: str
     battery: int
     last_sync: datetime | None
@@ -181,3 +185,4 @@ class DeviceDetectionPayload(BaseModel):
     device_name: str | None = None
     device_type: str = "ESP8266"
     location: str | None = None
+    city: str | None = None
