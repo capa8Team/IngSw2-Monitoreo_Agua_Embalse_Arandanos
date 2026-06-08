@@ -114,6 +114,13 @@
         />
       </div>
 
+      <div class="weather-section">
+        <WeatherCard 
+          v-if="selectedDevice.id" 
+          :device-id="selectedDevice.id"
+        />
+      </div>
+
       <section class="alerts-section">
         <div class="alerts-header">
           <h2 class="section-title">Tabla de Alertas (día actual)</h2>
@@ -682,6 +689,7 @@ import DashboardLoadingOverlay from './DashboardLoadingOverlay.vue'
 import ThemeToggleButton from './ThemeToggleButton.vue'
 import SensorCard from './SensorCard.vue'
 import BatteryIndicator from './BatteryIndicator.vue'
+import WeatherCard from './WeatherCard.vue'
 import { useDeviceStore } from '../stores/deviceStore'
 import {
   mapApiDeviceToCard,
@@ -2388,6 +2396,11 @@ onUnmounted(() => {
 .table-wrap {
   overflow: auto;
   transition: max-height 0.3s ease;
+}
+
+.weather-section {
+  margin-bottom: 40px;
+  margin-top: 40px;
 }
 
 .alerts-section:has(.see-more-btn:disabled) .table-wrap,
