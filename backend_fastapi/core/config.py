@@ -96,8 +96,15 @@ class Settings(BaseSettings):
     VITE_SUPABASE_URL: str | None = None
     VITE_SUPABASE_ANON_KEY: str | None = None
 
+    # ========================================================================
+    # OPENWEATHER API
+    # ========================================================================
+    OPENWEATHER_API_KEY: str | None = None
+
     @property
-    def parsed_to_emails(self) -> List[str]:
+    def openweather_api_key(self) -> str | None:
+        """Obtiene la clave de API de OpenWeather desde variables de entorno."""
+        return self.OPENWEATHER_API_KEY
         """Convierte el string de correos separados por coma en una lista limpia"""
         if not self.MAILERSEND_TO_EMAILS:
             return []

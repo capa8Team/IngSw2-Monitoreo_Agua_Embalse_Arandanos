@@ -7,6 +7,7 @@ from services.mongodb import (
     delete_device, register_new_microcontroller, get_device_by_arduino_id,
     update_device_status
 )
+from services.openweather import get_weather_data
 from core.log_service import log_service
 from core.log_origins import LogLevel, LogOrigin
 
@@ -43,12 +44,14 @@ async def create_new_device(payload: DeviceCreate) -> DeviceResponse:
     - **name**: Nombre del dispositivo (requerido)
     - **device_type**: Tipo de microcontrolador (ESP8266, Arduino, STM32, other)
     - **location**: Ubicación o zona del dispositivo
+    - **city**: Ciudad donde está ubicado (para datos de clima)
     - **arduino_id**: ID del Arduino (opcional, puede ser auto-detectado)
     """
     device = create_device(
         name=payload.name,
         device_type=payload.device_type,
         location=payload.location,
+        city=payload.city,
         arduino_id=payload.arduino_id,
         topic=payload.topic,
         telemetry_key=payload.telemetry_key,
@@ -61,7 +64,7 @@ async def create_new_device(payload: DeviceCreate) -> DeviceResponse:
         LogOrigin.DASHBOARD, LogLevel.INFO,
         f"Nuevo dispositivo creado: {payload.name}",
         component="api.devices", operation="create",
-        details={"device_type": payload.device_type, "location": payload.location}
+        details={"device_type": payload.device_type, "location": payload.location, "city": payload.city}
     )
     
     return DeviceResponse(**device)
@@ -173,6 +176,7 @@ async def update_device_info(device_id: str, payload: DeviceUpdate) -> DeviceRes
         device_id=device_id,
         name=payload.name,
         location=payload.location,
+        city=payload.city,
         active=payload.active,
         arduino_id=payload.arduino_id,
         telemetry_key=payload.telemetry_key,
@@ -233,3 +237,67 @@ async def update_device_connection_status(device_id: str, status: str = "online"
         raise HTTPException(status_code=500, detail="Error actualizando estado")
     
     return DeviceResponse(**device)
+
+
+@router.get("/{device_id}/weather")
+async def get_device_weather(device_id: str):
+    """
+    Obtiene el clima actual del lugar donde está ubicado el dispositivo.
+    
+    Usa la ciudad configurada en el dispositivo para obtener datos de OpenWeather.
+    """
+    device = get_device(device_id)
+    
+    if not device:
+        raise HTTPException(status_code=404, detail="Dispositivo no encontrado")
+    
+    city = (device.get("city") or device.get("location") or "").strip()
+    if not city:
+        raise HTTPException(
+            status_code=400,
+            detail="El dispositivo no tiene ciudad configurada. Agregue una ciudad en la sección de clima."
+        )
+    
+    weather_data = get_weather_data(city)
+    
+    if not weather_data:
+        raise HTTPException(
+            status_code=500,
+            detail=f"No se pudo obtener datos de clima para la ciudad: {city}"
+        )
+    
+    logger.info(f"Datos de clima obtenidos para dispositivo {device_id} (ciudad: {city})")
+    
+    return {
+        "device_id": device_id,
+        "device_name": device.get("name"),
+        "city": city,
+        "weather": weather_data
+    }
+
+
+@router.get("/weather/{city}")
+async def get_weather_by_city(city: str):
+    """
+    Obtiene el clima actual para una ciudad específica desde OpenWeather.
+    
+    Parámetros:
+    - **city**: Nombre de la ciudad (ej: Madrid, Buenos Aires)
+    """
+    if not city or not city.strip():
+        raise HTTPException(status_code=400, detail="Nombre de ciudad no válido")
+    
+    weather_data = get_weather_data(city)
+    
+    if not weather_data:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No se pudo obtener datos de clima para la ciudad: {city}. Verifique el nombre y que OpenWeather esté configurado."
+        )
+    
+    logger.info(f"Datos de clima obtenidos para la ciudad: {city}")
+    
+    return {
+        "city": city,
+        "weather": weather_data
+    }

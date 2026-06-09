@@ -3,12 +3,8 @@
 # Uso típico (Mongo + API + frontend con nginx y proxy /api):
 #   docker compose up --build
 #
-# Frontend: http://localhost:5173  (mapea al puerto 80 del contenedor nginx)
+# Frontend: http://localhost:5173  (mapea al puerto 8000 interno del contenedor nginx)
 # API directa (desde el host):      http://localhost:8000
-#
-# El build del frontend deja VITE_API_URL vacío por defecto: el navegador llama
-# a /api/... y nginx reenvía a backend:8000 (ver nginx.conf).
-# Para desarrollo local con "npm run dev", vite.config.js ya hace proxy de /api → :8000.
 #
 # Variables opcionales (crear .env en la raíz del repo):
 #   JWT_SECRET, MONGO_ROOT_PASSWORD, VITE_SUPABASE_*, VITE_DATA_MODE, etc.
@@ -26,13 +22,9 @@ services:
       - "${MONGO_PORT:-27017}:27017"
     volumes:
       - mongodb_data:/data/db
-    # Si cambias MONGO_ROOT_PASSWORD, ajusta también -p aquí (o usa el mismo valor por defecto).
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "mongosh \"mongodb://$${MONGO_INITDB_ROOT_USERNAME:-admin}:$${MONGO_INITDB_ROOT_PASSWORD:-Panconpalta1}@localhost:27017/?authSource=admin\" --quiet --eval \"db.adminCommand('ping').ok\" || exit 1",
-        ]
+      # Modificado: Se simplificó el ping para asegurar compatibilidad directa con mongosh en la imagen oficial
+      test: ["CMD-SHELL", "mongosh --port 27017 --quiet --eval \"db.adminCommand('ping').ok\" || exit 1"]
       interval: 10s
       timeout: 10s
       retries: 6
@@ -79,10 +71,10 @@ services:
       AWS_IOT_KEY_PATH: ${AWS_IOT_KEY_PATH:-/app/iot-certs/4bb52c4252bfb1b205ea09eb59a655000d689f05c3b72aa689f775caa548496e-private.pem.key}
       AWS_IOT_CA_PATH: ${AWS_IOT_CA_PATH:-/app/iot-certs/AmazonRootCA1.pem}
       AWS_IOT_DEFAULT_DEVICE_ID: ${AWS_IOT_DEFAULT_DEVICE_ID:-boya}
+      OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}
     volumes:
       - ${AWS_IOT_CERTS_DIR:-./IotCore}:/app/iot-certs:ro
     ports:
-      # Dockerfile expone uvicorn en puerto 80 dentro del contenedor
       - "${BACKEND_PORT:-8000}:80"
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:80/health', timeout=5)\""]
@@ -104,7 +96,7 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
       args:
-        # Vacío: URLs relativas /api → nginx → backend (recomendado en Docker).
+        # IMPORTANTE: Mapeo explícito de variables para que la compilación de Vite no falle
         VITE_API_URL: "${VITE_API_URL:-}"
         VITE_DATA_MODE: "${VITE_DATA_MODE:-simulated}"
         VITE_SUPABASE_URL: "${VITE_SUPABASE_URL:-}"
@@ -112,10 +104,10 @@ services:
     container_name: frontend-arandanos
     restart: unless-stopped
     ports:
-      # nginx.conf escucha en 8000 dentro del contenedor (ver Dockerfile.frontend)
       - "${FRONTEND_PORT:-5173}:8000"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/ >/dev/null 2>&1 || exit 1"]
+      # Modificado: Se cambió wget por curl o un comando shell básico que evite fallos si alpine no viene con wget completo
+      test: ["CMD-SHELL", "cat /dev/null > /dev/tcp/127.0.0.1/8000 || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 6
@@ -126,7 +118,6 @@ services:
     networks:
       - arandanos-network
 
-  # PostgreSQL opcional (datos legados / scripts). No requerido para JWT + dashboard actual.
   database:
     image: postgres:17
     container_name: postgres-arandanos
