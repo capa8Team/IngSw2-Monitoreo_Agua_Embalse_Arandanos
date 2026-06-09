@@ -115,9 +115,11 @@
       </div>
 
       <div class="weather-section">
-        <WeatherCard 
-          v-if="selectedDevice.id" 
+        <WeatherCard
+          v-if="selectedDevice.id"
           :device-id="selectedDevice.id"
+          :city="selectedDevice.city || selectedDevice.location || ''"
+          @city-updated="onDevicesChanged"
         />
       </div>
 

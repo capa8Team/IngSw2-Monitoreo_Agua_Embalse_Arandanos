@@ -3,8 +3,17 @@ import { createClient } from '@supabase/supabase-js'
 const RAW_SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
+const PLACEHOLDER_URL_MARKERS = ['your-project', 'tu-proyecto', '<project-id>', 'xxxx']
+const PLACEHOLDER_KEY_MARKERS = ['your-anon-key', 'anon-key-here', 'tu-anon-key']
+
+function isPlaceholderValue(value, markers) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (!normalized) return true
+  return markers.some((marker) => normalized.includes(marker))
+}
+
 function normalizeSupabaseUrl(url) {
-  if (!url) return ''
+  if (!url || isPlaceholderValue(url, PLACEHOLDER_URL_MARKERS)) return ''
 
   let normalized = String(url).trim()
   normalized = normalized.replace(/\/$/, '')
@@ -13,11 +22,14 @@ function normalizeSupabaseUrl(url) {
 }
 
 const SUPABASE_URL = normalizeSupabaseUrl(RAW_SUPABASE_URL)
+const SUPABASE_KEY = isPlaceholderValue(SUPABASE_ANON_KEY, PLACEHOLDER_KEY_MARKERS)
+  ? ''
+  : String(SUPABASE_ANON_KEY || '').trim()
 
-const supabaseConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY)
+const supabaseConfigured = Boolean(SUPABASE_URL && SUPABASE_KEY)
 
 export const supabase = supabaseConfigured
-  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  ? createClient(SUPABASE_URL, SUPABASE_KEY)
   : null
 
 const requireClient = () => {

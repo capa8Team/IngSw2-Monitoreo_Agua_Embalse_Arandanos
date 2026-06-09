@@ -15,6 +15,39 @@ logger = logging.getLogger(__name__)
 OPENWEATHER_API_KEY = None  # Será seteado en init_openweather()
 OPENWEATHER_BASE_URL = "https://api.openweathermap.org/data/2.5/weather"
 
+COUNTRY_ALIASES = {
+    "chile": "CL",
+    "argentina": "AR",
+    "peru": "PE",
+    "perú": "PE",
+    "uruguay": "UY",
+    "bolivia": "BO",
+    "colombia": "CO",
+    "mexico": "MX",
+    "méxico": "MX",
+    "españa": "ES",
+    "spain": "ES",
+    "brasil": "BR",
+    "brazil": "BR",
+}
+
+
+def normalize_city_query(city: str) -> str:
+    """Normaliza nombres como 'Santiago Chile' a 'Santiago,CL' para OpenWeather."""
+    city = city.strip()
+    if not city or "," in city:
+        return city
+
+    parts = city.split()
+    if len(parts) >= 2:
+        country_key = parts[-1].lower()
+        if country_key in COUNTRY_ALIASES:
+            city_name = " ".join(parts[:-1])
+            return f"{city_name},{COUNTRY_ALIASES[country_key]}"
+
+    return city
+
+
 def init_openweather(api_key: str) -> None:
     """
     Inicializa la clave de API de OpenWeather.
@@ -68,8 +101,9 @@ def get_weather_data(city: str) -> Optional[Dict[str, Any]]:
         return None
     
     try:
+        query_city = normalize_city_query(city)
         params = {
-            "q": city,
+            "q": query_city,
             "appid": OPENWEATHER_API_KEY,
             "units": "metric",  # Usar grados Celsius
             "lang": "es"  # Respuesta en español

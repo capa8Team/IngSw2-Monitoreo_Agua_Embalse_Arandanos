@@ -251,11 +251,11 @@ async def get_device_weather(device_id: str):
     if not device:
         raise HTTPException(status_code=404, detail="Dispositivo no encontrado")
     
-    city = device.get("city")
+    city = (device.get("city") or device.get("location") or "").strip()
     if not city:
         raise HTTPException(
             status_code=400,
-            detail="El dispositivo no tiene ciudad configurada. Agregue una ciudad en la configuración."
+            detail="El dispositivo no tiene ciudad configurada. Agregue una ciudad en la sección de clima."
         )
     
     weather_data = get_weather_data(city)

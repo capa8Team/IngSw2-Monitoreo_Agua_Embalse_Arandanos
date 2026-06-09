@@ -477,6 +477,10 @@ watch(() => props.device?.city, () => {
   .weather-temp {
     font-size: 16px;
   }
+
+  .sensor-value {
+    font-size: 13px;
+  }
 }
 
 /* Dark Mode */
@@ -532,12 +536,6 @@ watch(() => props.device?.city, () => {
 
   .detail-value {
     color: #e0e0e0;
-  }
-}
-  }
-
-  .sensor-value {
-    font-size: 13px;
   }
 }
 
