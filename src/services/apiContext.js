@@ -13,13 +13,45 @@ export function getStoredOrganizations() {
   }
 }
 
-/** Organización activa del dashboard (localStorage o única org de la sesión). */
+function parseJwtPayload(token) {
+  if (!token || typeof token !== 'string') return null
+  try {
+    const part = token.split('.')[1]
+    if (!part) return null
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4)
+    return JSON.parse(atob(padded))
+  } catch {
+    return null
+  }
+}
+
+/** Alinea localStorage con organization_id / organizations del JWT de acceso. */
+export function syncOrganizationContextFromAccessToken() {
+  const payload = parseJwtPayload(localStorage.getItem('access_token'))
+  if (!payload) return
+
+  const orgs = Array.isArray(payload.organizations) ? payload.organizations : []
+  if (orgs.length) {
+    localStorage.setItem('userOrganizations', JSON.stringify(orgs))
+  }
+
+  const tokenOrgId = payload.organization_id
+  if (tokenOrgId && orgs.some((o) => o.id === tokenOrgId)) {
+    localStorage.setItem('activeOrganizationId', tokenOrgId)
+    return
+  }
+  if (orgs[0]?.id) {
+    localStorage.setItem('activeOrganizationId', orgs[0].id)
+  }
+}
+
+/** Organización activa del dashboard (validada contra las orgs de la sesión). */
 export function getActiveOrganizationId() {
-  const stored = localStorage.getItem('activeOrganizationId')
-  if (stored) return stored
   const orgs = getStoredOrganizations()
-  if (orgs.length === 1) return orgs[0].id
-  if (orgs.length > 1) return orgs[0].id
+  const stored = localStorage.getItem('activeOrganizationId')
+  if (stored && orgs.some((o) => o.id === stored)) return stored
+  if (orgs.length > 0) return orgs[0].id
   return ''
 }
 

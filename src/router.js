@@ -4,6 +4,7 @@ import {
   tryRenewAccessToken,
   clearSession,
 } from './services/sessionAuth.js'
+import { syncOrganizationContextFromAccessToken } from './services/apiContext.js'
 
 // Importación lazy de vistas
 const Login = () => import('./views/Login.vue')
@@ -85,6 +86,7 @@ router.beforeEach(async (to, from, next) => {
     next('/login')
     return
   }
+  syncOrganizationContextFromAccessToken()
 
   if (to.meta.roles && to.meta.roles.length > 0) {
     const userRole = localStorage.getItem('userRole')

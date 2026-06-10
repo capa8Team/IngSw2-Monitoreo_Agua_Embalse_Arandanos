@@ -72,10 +72,18 @@ export function hasValidSessionToken() {
 function persistOrganizationContext(data) {
   const orgs = Array.isArray(data.organizations) ? data.organizations : []
   localStorage.setItem('userOrganizations', JSON.stringify(orgs))
-  if (data.organization_id) {
-    localStorage.setItem('activeOrganizationId', data.organization_id)
-  } else if (orgs[0]?.id) {
-    localStorage.setItem('activeOrganizationId', orgs[0].id)
+
+  let activeId = data.organization_id || null
+  if (activeId && !orgs.some((o) => o.id === activeId)) {
+    activeId = null
+  }
+  if (!activeId && orgs[0]?.id) {
+    activeId = orgs[0].id
+  }
+  if (activeId) {
+    localStorage.setItem('activeOrganizationId', activeId)
+  } else {
+    localStorage.removeItem('activeOrganizationId')
   }
 }
 

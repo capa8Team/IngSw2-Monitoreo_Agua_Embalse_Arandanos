@@ -461,25 +461,31 @@ def refresh_session(body: RefreshBody):
 
     email = payload.get("email") or payload.get("sub")
     role = payload.get("role") or ROLE_EMPLOYEE
-    user_id = payload.get("user_id")
-    organization_id = payload.get("organization_id")
-    organizations = payload.get("organizations")
+    user_id = str(payload.get("user_id") or "")
     if not email:
         raise HTTPException(status_code=401, detail="Token inválido")
+
+    preferred_org = payload.get("organization_id")
+    org_context = resolve_user_organization_context(
+        user_id=user_id,
+        preferred_organization_id=str(preferred_org) if preferred_org else None,
+    )
+    org_claims = organizations_to_claims(org_context.organizations)
+    active_org_id = org_context.active_organization_id
 
     access_token, access_expires = create_access_token(
         email=str(email),
         role=str(role),
-        user_id=str(user_id) if user_id else None,
-        organization_id=str(organization_id) if organization_id else None,
-        organizations=organizations if isinstance(organizations, list) else None,
+        user_id=user_id or None,
+        organization_id=active_org_id,
+        organizations=org_claims,
     )
     refresh_token, refresh_expires = create_refresh_token(
         email=str(email),
         role=str(role),
-        user_id=str(user_id) if user_id else None,
-        organization_id=str(organization_id) if organization_id else None,
-        organizations=organizations if isinstance(organizations, list) else None,
+        user_id=user_id or None,
+        organization_id=active_org_id,
+        organizations=org_claims,
     )
     return {
         "access_token": access_token,
@@ -489,9 +495,9 @@ def refresh_session(body: RefreshBody):
         "refresh_expires_in": refresh_expires,
         "role": role,
         "email": email,
-        "user_id": user_id,
-        "organization_id": organization_id,
-        "organizations": organizations,
+        "user_id": user_id or None,
+        "organization_id": active_org_id,
+        "organizations": org_claims,
     }
 
 
