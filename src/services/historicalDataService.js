@@ -14,10 +14,11 @@ import {
   parseTimestamp,
 } from '../utils/sensorUtils.js'
 
-const POLL_INTERVAL_MS = 30_000
+const POLL_INTERVAL_MS = 10_000
 const CHART_LOOKBACK_DAYS = 7
-const CHART_FETCH_LIMIT = 1500
-const INCREMENTAL_LIMIT = 200
+const CHART_FETCH_LIMIT = 500
+const INCREMENTAL_LIMIT = 100
+const TABLE_LIVE_PAGE_SIZE = 10
 
 function resolveApiBase() {
   const raw = import.meta.env.VITE_API_URL
@@ -121,6 +122,8 @@ export async function fetchHistoricalTable({
   dateFrom = null,
   dateTo = null,
   registeredDevices = [],
+  live = false,
+  since = null,
 } = {}) {
   if (IS_SIMULATED_MODE) {
     return buildSimulatedTablePage({
@@ -138,6 +141,8 @@ export async function fetchHistoricalTable({
   params.set('page', String(page))
   params.set('page_size', String(pageSize))
   params.set('sensor', sensor)
+  if (live) params.set('live', 'true')
+  if (since) params.set('since', since.toISOString())
   if (dateFrom) params.set('date_from', dateFrom)
   if (dateTo) params.set('date_to', dateTo)
 
@@ -241,7 +246,34 @@ export function getHistoricalDataSourceLabel() {
   return IS_SIMULATED_MODE ? 'Datos simulados' : 'Datos en vivo'
 }
 
-export { IS_SIMULATED_MODE, POLL_INTERVAL_MS, CHART_LOOKBACK_DAYS, CHART_FETCH_LIMIT }
+export function mergeTableRows(existing, incoming, maxSize = TABLE_LIVE_PAGE_SIZE) {
+  const merged = new Map()
+  for (const row of existing) {
+    merged.set(row.key, row)
+  }
+  for (const row of incoming) {
+    merged.set(row.key, row)
+  }
+  return [...merged.values()]
+    .sort((a, b) => parseTimestamp(b.timestamp) - parseTimestamp(a.timestamp))
+    .slice(0, maxSize)
+}
+
+export function maxReadingTimestamp(readings) {
+  if (!readings?.length) return null
+  return readings.reduce((max, record) => {
+    const ts = parseTimestamp(record.timestamp).getTime()
+    return ts > max ? ts : max
+  }, 0)
+}
+
+export {
+  IS_SIMULATED_MODE,
+  POLL_INTERVAL_MS,
+  CHART_LOOKBACK_DAYS,
+  CHART_FETCH_LIMIT,
+  TABLE_LIVE_PAGE_SIZE,
+}
 
 /** @deprecated Usar fetchHistoricalReadings */
 export async function fetchSensorReadings() {

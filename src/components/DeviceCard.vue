@@ -85,6 +85,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import BatteryIndicator from './BatteryIndicator.vue'
+import { getApiAuthHeaders } from '../services/apiContext.js'
 
 const props = defineProps({
   device: {
@@ -162,7 +163,9 @@ const fetchWeather = async () => {
 
   try {
     const apiUrl = import.meta.env.VITE_API_URL || ''
-    const response = await fetch(`${apiUrl}/api/devices/weather/${encodeURIComponent(props.device.city)}`)
+    const response = await fetch(`${apiUrl}/api/devices/weather/${encodeURIComponent(props.device.city)}`, {
+      headers: getApiAuthHeaders(),
+    })
     
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)

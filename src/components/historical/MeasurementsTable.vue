@@ -2,7 +2,7 @@
   <section class="table-wrapper">
     <div class="table-header">
       <h3>Mediciones En Tiempo Real</h3>
-      <span class="table-meta">Actualiza cada 30 segundos</span>
+      <span class="table-meta">Actualiza cada 10 segundos</span>
     </div>
 
     <div class="table-filters" aria-label="Filtro de fechas de la tabla">

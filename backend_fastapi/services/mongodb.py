@@ -90,6 +90,10 @@ def ensure_sensor_indexes() -> None:
             [("arduino_id", 1), ("timestamp", -1)],
             name="arduino_timestamp_desc",
         )
+        collection.create_index(
+            [("organization_id", 1), ("timestamp", -1)],
+            name="org_timestamp_desc",
+        )
         logger.info("Índices de sensor_readings verificados")
     except Exception as e:
         logger.warning("No se pudieron crear índices en sensor_readings: %s", e)
@@ -133,8 +137,52 @@ def migrate_devices_organization() -> None:
         logger.warning("No se pudo migrar organization en devices: %s", e)
 
 
+def migrate_sensor_readings_organization() -> None:
+    """Etiqueta lecturas legacy con la organización de su dispositivo."""
+    if db is None:
+        return
+    try:
+        devices = list(
+            db["devices"].find(
+                {},
+                {"arduino_id": 1, "name": 1, "telemetry_key": 1, "organization_id": 1, "organization_slug": 1},
+            )
+        )
+        key_to_org: dict[str, dict[str, str]] = {}
+        for device in devices:
+            org_payload = {
+                "organization_id": device.get("organization_id"),
+                "organization_slug": device.get("organization_slug") or DEFAULT_ORGANIZATION_SLUG,
+            }
+            for field in ("arduino_id", "name", "telemetry_key"):
+                value = str(device.get(field) or "").strip()
+                if value:
+                    key_to_org[value] = org_payload
+
+        updated = 0
+        for key, org_payload in key_to_org.items():
+            if not org_payload.get("organization_id"):
+                continue
+            result = db["sensor_readings"].update_many(
+                {
+                    "arduino_id": key,
+                    "$or": [
+                        {"organization_id": {"$exists": False}},
+                        {"organization_id": None},
+                    ],
+                },
+                {"$set": org_payload},
+            )
+            updated += result.modified_count
+        if updated:
+            logger.info("Migradas %s lecturas con organization_id", updated)
+    except Exception as e:
+        logger.warning("No se pudo migrar organization en sensor_readings: %s", e)
+
+
 if db is not None:
     migrate_devices_organization()
+    migrate_sensor_readings_organization()
 
 # ============================================================================
 # LÓGICA DE NEGOCIO Y BASE DE DATOS
@@ -153,12 +201,14 @@ def save_sensor_payload_to_mongodb(payload: SensorMongoPayload, source: str = "a
     try:
         collection = db["sensor_readings"]
         sensor_timestamp, sensor_uptime = _resolve_sensor_timestamp(payload.timestamp)
+        org_fields = _org_fields_for_arduino(payload.arduino_id)
         document = {
             "arduino_id": payload.arduino_id,
             "timestamp": sensor_timestamp,
             "mediciones": payload.mediciones.model_dump(),
             "bateria": payload.bateria,
             "source": source,
+            **org_fields,
         }
         if sensor_uptime is not None:
             document["sensor_uptime_seconds"] = sensor_uptime
@@ -193,11 +243,16 @@ def normalize_sensor_document(reading: dict) -> dict:
         "timestamp": to_chile_time(reading.get("timestamp", utc_now())),
     }
 
-def get_latest_sensor_reading(arduino_id: str | None = None) -> Optional[dict]:
+def get_latest_sensor_reading(
+    arduino_id: str | None = None,
+    *,
+    tenant_filter: dict | None = None,
+) -> Optional[dict]:
     if db is not None:
         try:
-            query = {"arduino_id": arduino_id} if arduino_id else {}
-            reading = db["sensor_readings"].find_one(query, sort=[("_id", -1)])
+            query: dict = {"arduino_id": arduino_id} if arduino_id else {}
+            query = _merge_org_filter(query, tenant_filter)
+            reading = db["sensor_readings"].find_one(query, sort=[("timestamp", -1)])
             if reading:
                 return normalize_sensor_document(reading)
         except Exception as e:
@@ -211,6 +266,7 @@ def _build_readings_query(
     since: datetime | None = None,
     until: datetime | None = None,
     arduino_id: str | None = None,
+    tenant_filter: dict | None = None,
 ) -> dict:
     query: dict = {}
     ts_filter: dict = {}
@@ -222,7 +278,7 @@ def _build_readings_query(
         query["timestamp"] = ts_filter
     if arduino_id:
         query["arduino_id"] = arduino_id
-    return query
+    return _merge_org_filter(query, tenant_filter)
 
 
 def query_sensor_readings(
@@ -231,15 +287,26 @@ def query_sensor_readings(
     until: datetime | None = None,
     arduino_id: str | None = None,
     limit: int = 500,
+    tenant_filter: dict | None = None,
 ) -> list[dict]:
     """Consulta acotada por rango temporal (orden descendente por timestamp)."""
     limit = max(1, min(limit, HISTORICAL_MAX_LIMIT))
     if db is not None:
         try:
-            query = _build_readings_query(since, until, arduino_id)
+            query = _build_readings_query(since, until, arduino_id, tenant_filter)
+            projection = {
+                "_id": 1,
+                "timestamp": 1,
+                "arduino_id": 1,
+                "embalse": 1,
+                "ph": 1,
+                "temperature": 1,
+                "conductivity": 1,
+                "mediciones": 1,
+            }
             readings = list(
                 db["sensor_readings"]
-                .find(query)
+                .find(query, projection)
                 .sort("timestamp", -1)
                 .limit(limit)
             )
@@ -267,9 +334,13 @@ def query_sensor_readings(
 def get_sensor_readings_history(limit: int = 100) -> list[dict]:
     return query_sensor_readings(limit=limit)
 
-def update_dashboard_state_from_mongodb(arduino_id: str | None = None) -> Optional[DashboardResponse]:
+def update_dashboard_state_from_mongodb(
+    arduino_id: str | None = None,
+    *,
+    tenant_filter: dict | None = None,
+) -> Optional[DashboardResponse]:
     global dashboard_state
-    reading = get_latest_sensor_reading(arduino_id)
+    reading = get_latest_sensor_reading(arduino_id, tenant_filter=tenant_filter)
     if not reading:
         dashboard_state = None
         return None
@@ -461,6 +532,26 @@ def find_device_by_key(key: str, *, include_inactive: bool = False) -> Optional[
     except Exception as e:
         logger.error("Error buscando dispositivo por clave: %s", e)
         return None
+
+
+def _org_fields_for_arduino(arduino_id: str | None) -> dict[str, str | None]:
+    """Resuelve organization_id/slug desde el dispositivo registrado."""
+    key = str(arduino_id or "").strip()
+    if key:
+        device = find_device_by_key(key, include_inactive=True)
+        if device:
+            org_id = device.get("organization_id")
+            org_slug = device.get("organization_slug")
+            if org_id or org_slug:
+                return {
+                    "organization_id": str(org_id) if org_id else None,
+                    "organization_slug": str(org_slug or DEFAULT_ORGANIZATION_SLUG),
+                }
+    defaults = _default_org_fields()
+    return {
+        "organization_id": defaults.get("organization_id"),
+        "organization_slug": defaults.get("organization_slug", DEFAULT_ORGANIZATION_SLUG),
+    }
 
 
 def get_all_devices(

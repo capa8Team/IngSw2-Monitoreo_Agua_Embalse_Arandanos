@@ -3,6 +3,7 @@
  */
 
 import { getAlertLevel } from '../utils/sensorUtils.js'
+import { getApiAuthHeaders } from './apiContext.js'
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 const DATA_MODE = String(import.meta.env.VITE_DATA_MODE ?? 'real').trim().toLowerCase()
@@ -27,10 +28,8 @@ export const sendAlertToBackend = async (deviceName, sensor, value, measurement,
 
     const response = await fetch(API_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
+      headers: getApiAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(payload),
     })
 
     if (!response.ok) {

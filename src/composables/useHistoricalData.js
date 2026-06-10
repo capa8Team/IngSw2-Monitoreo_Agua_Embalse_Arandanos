@@ -11,9 +11,12 @@ import {
   fetchActiveDevices,
   fetchIncrementalReadings,
   mergeHistoricalReadings,
+  mergeTableRows,
+  maxReadingTimestamp,
   getHistoricalDataSourceLabel,
   IS_SIMULATED_MODE,
   POLL_INTERVAL_MS,
+  TABLE_LIVE_PAGE_SIZE,
 } from '../services/historicalDataService.js'
 
 export function useHistoricalData() {
@@ -25,6 +28,8 @@ export function useHistoricalData() {
   const exportRows              = ref([])
   const registeredDevices       = ref([])
   const lastPollTimestamp       = ref(null)
+  const lastTableDataTimestamp  = ref(null)
+  const initialLoading          = ref(false)
 
   const tableFilters = reactive({
     sensor:    'all',
@@ -91,6 +96,19 @@ export function useHistoricalData() {
     ])
   }
 
+  function isLiveTableContext() {
+    return tablePage.value === 1
+      && tableFilters.mode === 'all'
+      && tableFilters.sensor === 'all'
+  }
+
+  function syncPollTimestampFromCharts() {
+    const maxTs = maxReadingTimestamp(chartSourceReadings.value)
+    if (maxTs) {
+      lastPollTimestamp.value = new Date(maxTs)
+    }
+  }
+
   async function loadChartReadings(full = false) {
     if (full || !chartSourceReadings.value.length) {
       chartSourceReadings.value = await fetchHistoricalReadings()
@@ -99,6 +117,7 @@ export function useHistoricalData() {
         chartSourceReadings.value,
         registeredDevices.value,
       )
+      syncPollTimestampFromCharts()
     } else if (lastPollTimestamp.value) {
       const incoming = await fetchIncrementalReadings(
         lastPollTimestamp.value,
@@ -110,24 +129,52 @@ export function useHistoricalData() {
           incoming,
           registeredDevices.value,
         )
+        syncPollTimestampFromCharts()
       }
     }
-    lastPollTimestamp.value = new Date()
     await loadAllChartData()
   }
 
-  async function loadTableData() {
-    tableLoading.value = true
+  function syncTableTimestampFromRows(rows) {
+    if (!rows?.length) return
+    const maxTs = rows.reduce((max, row) => {
+      const ts = new Date(row.timestamp).getTime()
+      return ts > max ? ts : max
+    }, 0)
+    if (maxTs) {
+      lastTableDataTimestamp.value = new Date(maxTs)
+    }
+  }
+
+  async function loadTableData({ incremental = false } = {}) {
+    const useLive = incremental && isLiveTableContext()
+    if (!useLive) {
+      tableLoading.value = true
+    }
     try {
       const result = await fetchHistoricalTable({
         ...tableQueryParams(),
         registeredDevices: registeredDevices.value,
+        live: useLive || (tablePage.value === 1 && tableFilters.mode === 'all'),
+        since: useLive ? lastTableDataTimestamp.value : null,
       })
-      measurementRows.value = result.rows
-      tableTotal.value = result.total
-      tablePage.value = result.page
+      if (useLive && result.rows.length) {
+        measurementRows.value = mergeTableRows(
+          measurementRows.value,
+          result.rows,
+          TABLE_LIVE_PAGE_SIZE,
+        )
+        tableTotal.value = Math.max(tableTotal.value, measurementRows.value.length)
+      } else {
+        measurementRows.value = result.rows
+        tableTotal.value = result.total
+        tablePage.value = result.page
+        syncTableTimestampFromRows(result.rows)
+      }
     } finally {
-      tableLoading.value = false
+      if (!useLive) {
+        tableLoading.value = false
+      }
     }
   }
 
@@ -136,9 +183,16 @@ export function useHistoricalData() {
   }
 
   async function refreshHistorical({ full = false } = {}) {
-    await loadRegisteredDevices()
-    await loadChartReadings(full)
-    await loadTableData()
+    initialLoading.value = true
+    try {
+      await loadRegisteredDevices()
+      await Promise.all([
+        loadChartReadings(full),
+        loadTableData(),
+      ])
+    } finally {
+      initialLoading.value = false
+    }
   }
 
   async function onTablePageChange(page) {
@@ -161,8 +215,10 @@ export function useHistoricalData() {
   function startPolling() {
     refreshTimer = setInterval(async () => {
       try {
-        await loadChartReadings(false)
-        await loadTableData()
+        await Promise.all([
+          loadChartReadings(false),
+          loadTableData({ incremental: true }),
+        ])
       } catch (err) {
         console.error(err)
       }
@@ -174,9 +230,10 @@ export function useHistoricalData() {
   }
 
   return {
-    measurementRows, exportRows, tableTotal, tablePage, tableLoading, tableFilters,
+    measurementRows, exportRows, tableTotal, tablePage, tableLoading, initialLoading, tableFilters,
     deviceOptions, registeredDevices,
     dataSourceLabel: getHistoricalDataSourceLabel(),
+    pollIntervalMs: POLL_INTERVAL_MS,
     isSimulatedMode: IS_SIMULATED_MODE,
     phPeriod, tempPeriod, condPeriod,
     chartData, chartStats,

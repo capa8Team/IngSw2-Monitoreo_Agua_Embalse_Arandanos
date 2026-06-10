@@ -3,7 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from core.tenant import TenantContext, ensure_device_in_tenant, get_optional_tenant_context
+from core.tenant import TenantContext, ensure_device_in_tenant, get_tenant_context
 from models import DeviceCreate, DeviceResponse, DeviceUpdate, DeviceDetectionPayload
 from services.mongodb import (
     create_device, get_device, get_all_devices, update_device,
@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/devices", tags=["Dispositivos"])
 
 @router.get("", response_model=list[DeviceResponse])
 def list_devices(
-    tenant: Annotated[TenantContext, Depends(get_optional_tenant_context)],
+    tenant: Annotated[TenantContext, Depends(get_tenant_context)],
     active_only: bool = Query(True, description="Mostrar solo dispositivos activos"),
 ):
     """
@@ -42,7 +42,7 @@ def list_devices(
 @router.post("", response_model=DeviceResponse, status_code=201)
 async def create_new_device(
     payload: DeviceCreate,
-    tenant: Annotated[TenantContext, Depends(get_optional_tenant_context)],
+    tenant: Annotated[TenantContext, Depends(get_tenant_context)],
 ) -> DeviceResponse:
     """Crea un nuevo dispositivo asociado a la organización activa."""
     device = create_device(
@@ -78,7 +78,7 @@ async def create_new_device(
 @router.post("/detect", response_model=DeviceResponse, status_code=201)
 async def detect_microcontroller(
     payload: DeviceDetectionPayload,
-    tenant: Annotated[TenantContext, Depends(get_optional_tenant_context)],
+    tenant: Annotated[TenantContext, Depends(get_tenant_context)],
 ) -> DeviceResponse:
     """Detecta y registra un microcontrolador en la organización activa."""
     existing = get_device_by_arduino_id(payload.arduino_id)
@@ -115,7 +115,7 @@ async def detect_microcontroller(
 
 @router.get("/detect-available")
 async def get_available_microcontrollers(
-    tenant: Annotated[TenantContext, Depends(get_optional_tenant_context)],
+    tenant: Annotated[TenantContext, Depends(get_tenant_context)],
 ):
     """Microcontroladores disponibles para registrar en la organización activa."""
     from services.mongodb import db
@@ -125,7 +125,8 @@ async def get_available_microcontrollers(
 
     try:
         sensor_collection = db["sensor_readings"]
-        available = sensor_collection.distinct("arduino_id")
+        readings_filter = tenant.readings_filter()
+        available = sensor_collection.distinct("arduino_id", readings_filter)
 
         org_devices = get_all_devices(active_only=True, org_filter=tenant.device_filter())
         registered_keys: set[str] = set()
@@ -150,7 +151,7 @@ async def get_available_microcontrollers(
 @router.get("/{device_id}", response_model=DeviceResponse)
 def get_device_info(
     device_id: str,
-    tenant: Annotated[TenantContext, Depends(get_optional_tenant_context)],
+    tenant: Annotated[TenantContext, Depends(get_tenant_context)],
 ) -> DeviceResponse:
     """Obtiene la información de un dispositivo de la organización activa."""
     device = get_device(device_id)
@@ -162,7 +163,7 @@ def get_device_info(
 async def update_device_info(
     device_id: str,
     payload: DeviceUpdate,
-    tenant: Annotated[TenantContext, Depends(get_optional_tenant_context)],
+    tenant: Annotated[TenantContext, Depends(get_tenant_context)],
 ) -> DeviceResponse:
     """Actualiza un dispositivo de la organización activa."""
     existing = get_device(device_id)
@@ -194,7 +195,7 @@ async def update_device_info(
 @router.delete("/{device_id}", status_code=204)
 async def delete_device_endpoint(
     device_id: str,
-    tenant: Annotated[TenantContext, Depends(get_optional_tenant_context)],
+    tenant: Annotated[TenantContext, Depends(get_tenant_context)],
 ):
     """Elimina (desactiva) un dispositivo de la organización activa."""
     existing = get_device(device_id)
@@ -215,7 +216,7 @@ async def delete_device_endpoint(
 @router.post("/{device_id}/status")
 async def update_device_connection_status(
     device_id: str,
-    tenant: Annotated[TenantContext, Depends(get_optional_tenant_context)],
+    tenant: Annotated[TenantContext, Depends(get_tenant_context)],
     status: str = Query("online"),
     battery: int | None = Query(None),
 ):
@@ -239,7 +240,7 @@ async def update_device_connection_status(
 @router.get("/{device_id}/weather")
 async def get_device_weather(
     device_id: str,
-    tenant: Annotated[TenantContext, Depends(get_optional_tenant_context)],
+    tenant: Annotated[TenantContext, Depends(get_tenant_context)],
 ):
     """Obtiene el clima del dispositivo (organización activa)."""
     device = get_device(device_id)
@@ -271,7 +272,10 @@ async def get_device_weather(
 
 
 @router.get("/weather/{city}")
-async def get_weather_by_city(city: str):
+async def get_weather_by_city(
+    city: str,
+    _tenant: Annotated[TenantContext, Depends(get_tenant_context)],
+):
     """Obtiene el clima actual para una ciudad específica desde OpenWeather."""
     if not city or not city.strip():
         raise HTTPException(status_code=400, detail="Nombre de ciudad no válido")

@@ -13,6 +13,7 @@
     </header>
 
     <main class="history-content">
+      <p v-if="initialLoading" class="history-loading-hint">Cargando datos históricos…</p>
       <SensorChart sensorKey="ph"           v-model:period="phPeriod"   :chartData="chartData.ph"           :stats="chartStats.ph"           />
       <SensorChart sensorKey="temperature"  v-model:period="tempPeriod" :chartData="chartData.temperature"  :stats="chartStats.temperature"  />
       <SensorChart sensorKey="conductivity" v-model:period="condPeriod" :chartData="chartData.conductivity" :stats="chartStats.conductivity" />
@@ -50,7 +51,7 @@ const isUserAdmin = computed(() => isAdminRole(localStorage.getItem('userRole'))
 const showPdfModal = ref(false)
 
 const {
-  measurementRows, exportRows, deviceOptions, tableTotal, tablePage, tableLoading,
+  measurementRows, exportRows, deviceOptions, tableTotal, tablePage, tableLoading, initialLoading,
   isSimulatedMode,
   phPeriod, tempPeriod, condPeriod,
   chartData, chartStats,
@@ -148,6 +149,16 @@ onBeforeUnmount(stopPolling)
   font-size: 20px;
   font-weight: 600;
   color: #333;
+}
+
+.history-loading-hint {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #e8f5e9;
+  color: #2e7d32;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .pdf-btn {

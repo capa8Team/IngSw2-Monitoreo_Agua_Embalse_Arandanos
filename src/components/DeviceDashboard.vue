@@ -724,7 +724,7 @@ import {
   fetchOrganizationUsersForAdmin,
 } from '../services/sessionAuth.js'
 import { fetchAccountsActivity } from '../services/adminActivityService.js'
-import { getActiveOrganizationName } from '../services/apiContext.js'
+import { getActiveOrganizationName, getApiAuthHeaders } from '../services/apiContext.js'
 
 const router = useRouter()
 const activeOrganizationName = computed(() => getActiveOrganizationName())
@@ -1254,7 +1254,9 @@ const loadDashboardFromApi = async () => {
   let dataSource = IS_SIMULATED_MODE ? 'simulated' : 'real'
   if (!IS_SIMULATED_MODE) {
     try {
-      const diagResponse = await fetch(`${API_BASE_URL}/api/diagnostics`)
+      const diagResponse = await fetch(`${API_BASE_URL}/api/diagnostics`, {
+        headers: getApiAuthHeaders(),
+      })
       if (diagResponse.ok) {
         const diag = await diagResponse.json()
         dataSource = diag.data_source || 'real'
