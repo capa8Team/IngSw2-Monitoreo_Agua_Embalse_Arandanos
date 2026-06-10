@@ -2,9 +2,13 @@ import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Query
+from typing import Annotated
 
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from core.tenant import TenantContext, ensure_device_in_tenant, get_optional_tenant_context
 from models import HistoricalTableResponse, SensorDataResponse
+from services.mongodb import find_device_by_key
 from services.historical_table import get_historical_table_page
 from services.mongodb import (
     HISTORICAL_MAX_LIMIT,
@@ -20,22 +24,40 @@ router = APIRouter(prefix="/api/sensors", tags=["Sensores"])
 # Este router expone consultas acotadas para dashboard e histórico.
 
 
+def _validate_arduino_for_tenant(arduino_id: str | None, tenant: TenantContext) -> None:
+    if not arduino_id:
+        return
+    device = find_device_by_key(arduino_id)
+    if device:
+        ensure_device_in_tenant(device, tenant)
+
+
 @router.get("/latest", response_model=Optional[SensorDataResponse])
-def get_latest_reading():
+def get_latest_reading(
+    tenant: Annotated[TenantContext, Depends(get_optional_tenant_context)],
+    arduino_id: str | None = Query(default=None),
+):
     """Última lectura almacenada (origen MQTT / MongoDB)."""
-    reading = get_latest_sensor_reading()
+    _validate_arduino_for_tenant(arduino_id, tenant)
+    reading = get_latest_sensor_reading(arduino_id)
     return SensorDataResponse(**reading) if reading else None
 
 
 @router.get("/history", response_model=list[SensorDataResponse])
-def get_readings_history(limit: int = Query(default=100, ge=1, le=HISTORICAL_MAX_LIMIT)):
+def get_readings_history(
+    tenant: Annotated[TenantContext, Depends(get_optional_tenant_context)],
+    limit: int = Query(default=100, ge=1, le=HISTORICAL_MAX_LIMIT),
+    arduino_id: str | None = Query(default=None),
+):
     """Historial reciente (compatibilidad con clientes anteriores)."""
-    readings = query_sensor_readings(limit=limit)
+    _validate_arduino_for_tenant(arduino_id, tenant)
+    readings = query_sensor_readings(limit=limit, arduino_id=arduino_id)
     return [SensorDataResponse(**r) for r in readings]
 
 
 @router.get("/history/range", response_model=list[SensorDataResponse])
 def get_readings_in_range(
+    tenant: Annotated[TenantContext, Depends(get_optional_tenant_context)],
     since: datetime | None = Query(default=None, description="Inicio del rango (ISO 8601, UTC)"),
     until: datetime | None = Query(default=None, description="Fin del rango (ISO 8601, UTC)"),
     days: int | None = Query(default=None, ge=1, le=30, description="Alternativa: últimos N días"),
@@ -43,6 +65,7 @@ def get_readings_in_range(
     limit: int = Query(default=500, ge=1, le=HISTORICAL_MAX_LIMIT),
 ):
     """Lecturas acotadas por rango temporal para gráficos históricos."""
+    _validate_arduino_for_tenant(arduino_id, tenant)
     effective_since = since
     if effective_since is None and days is not None:
         effective_since = datetime.now(timezone.utc) - timedelta(days=days)

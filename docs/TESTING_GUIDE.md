@@ -363,7 +363,7 @@ Antes de dar el proyecto por completamente testado, marca esto:
 
 Si todo pasó:
 1. Commit los cambios: `git add . && git commit -m "Refactor: HistoricalData architecture + Docker validation"`
-2. Revisar los problemas P0 y P1 en [CODE_REVIEW.md](CODE_REVIEW.md)
+2. Revisar logs del backend y del navegador si algún paso falla
 3. Seguir el plan de acción de Fase 1 (seguridad) antes de cualquier deploy
 
 Si algo no funciona:

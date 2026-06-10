@@ -4,10 +4,15 @@
       <ThemeToggleButton />
       <div class="header-content">
         <h1 class="header-title"> QAwa - Dispositivos Conectados</h1>
+        <p v-if="activeOrganizationName" class="org-context-label">
+          Organización: {{ activeOrganizationName }}
+        </p>
         <p class="header-subtitle">Selecciona un Arduino para ver las mediciones en tiempo real</p>
       </div>
       
       <div class="view-controls">
+        <OrganizationSwitcher @organization-changed="$emit('organization-changed')" />
+
         <button 
           class="view-btn grid-view"
           :class="{ active: viewMode === 'grid' }"
@@ -102,11 +107,15 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { getActiveOrganizationName } from '../services/apiContext.js'
 import DeviceCard from './DeviceCard.vue'
 import ThemeToggleButton from './ThemeToggleButton.vue'
 import AdminDevicesSection from './AdminDevicesSection.vue'
+import OrganizationSwitcher from './OrganizationSwitcher.vue'
 import { useDeviceStore } from '../stores/deviceStore'
+
+const activeOrganizationName = computed(() => getActiveOrganizationName())
 
 const viewMode = ref('grid')
 const selectedDeviceId = ref(null)
@@ -157,6 +166,7 @@ const emit = defineEmits([
   'open-account-activity',
   'logout',
   'add-device',
+  'organization-changed',
   'devices-changed',
 ])
 </script>
@@ -187,6 +197,13 @@ const emit = defineEmits([
   font-weight: 700;
   color: #222;
   letter-spacing: -0.5px;
+}
+
+.org-context-label {
+  margin: 6px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #2e7d32;
 }
 
 .header-subtitle {

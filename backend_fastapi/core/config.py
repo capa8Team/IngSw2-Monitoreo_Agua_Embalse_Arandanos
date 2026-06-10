@@ -95,6 +95,7 @@ class Settings(BaseSettings):
     SUPABASE_ANON_KEY: str | None = None
     VITE_SUPABASE_URL: str | None = None
     VITE_SUPABASE_ANON_KEY: str | None = None
+    DEFAULT_ORGANIZATION_SLUG: str = "embalse-arandanos"
 
     # ========================================================================
     # OPENWEATHER API

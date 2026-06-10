@@ -9,6 +9,8 @@
 // CONFIGURACIÓN
 // ============================================================================
 
+import { getApiAuthHeaders } from './apiContext.js'
+
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 const RAW_DATA_MODE = String(import.meta.env.VITE_DATA_MODE ?? 'real').trim().toLowerCase()
 export const DATA_MODE = RAW_DATA_MODE === 'simulated' ? 'simulated' : 'real'
@@ -159,7 +161,7 @@ export const fetchDashboardData = async (apiUrl, arduinoId = null) => {
   }
 
   try {
-    const response = await fetch(url)
+    const response = await fetch(url, { headers: getApiAuthHeaders() })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     return await response.json()
   } catch (error) {
@@ -180,7 +182,9 @@ export const fetchSensorHistory = async (limit = 100) => {
   }
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/sensors/history?limit=${limit}`)
+    const response = await fetch(`${API_BASE_URL}/api/sensors/history?limit=${limit}`, {
+      headers: getApiAuthHeaders(),
+    })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     return await response.json()
   } catch (error) {

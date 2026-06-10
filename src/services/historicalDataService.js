@@ -1,3 +1,4 @@
+import { getApiAuthHeaders } from './apiContext.js'
 import {
   IS_SIMULATED_MODE,
   buildSimulatedHistoricalReadings,
@@ -99,7 +100,9 @@ export async function fetchHistoricalReadings({
   if (!since && !until) params.set('days', String(days))
 
   try {
-    const res = await fetch(`${api}/api/sensors/history/range?${params}`)
+    const res = await fetch(`${api}/api/sensors/history/range?${params}`, {
+      headers: getApiAuthHeaders(),
+    })
     if (res.ok) {
       const payload = await res.json()
       if (Array.isArray(payload)) {
@@ -139,7 +142,9 @@ export async function fetchHistoricalTable({
   if (dateTo) params.set('date_to', dateTo)
 
   try {
-    const res = await fetch(`${api}/api/sensors/history/table?${params}`)
+    const res = await fetch(`${api}/api/sensors/history/table?${params}`, {
+      headers: getApiAuthHeaders(),
+    })
     if (res.ok) {
       const payload = await res.json()
       return {
@@ -164,7 +169,7 @@ export async function fetchHistoricalExportRows(registeredDevices = []) {
 
 export async function fetchDashboardSnapshot() {
   const api = resolveApiBase()
-  const res = await fetch(`${api}/api/dashboard`)
+  const res = await fetch(`${api}/api/dashboard`, { headers: getApiAuthHeaders() })
   if (!res.ok) throw new Error(`Dashboard API error ${res.status}`)
   return res.json()
 }
@@ -174,7 +179,7 @@ export async function fetchActiveDevices() {
   if (IS_SIMULATED_MODE) {
     try {
       const api = resolveApiBase()
-      const res = await fetch(`${api}/api/devices`)
+      const res = await fetch(`${api}/api/devices`, { headers: getApiAuthHeaders() })
       if (res.ok) {
         const data = await res.json()
         if (Array.isArray(data)) {
@@ -188,7 +193,7 @@ export async function fetchActiveDevices() {
 
   const api = resolveApiBase()
   try {
-    const res = await fetch(`${api}/api/devices`)
+    const res = await fetch(`${api}/api/devices`, { headers: getApiAuthHeaders() })
     if (!res.ok) return []
     const data = await res.json()
     if (!Array.isArray(data)) return []

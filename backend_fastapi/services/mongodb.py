@@ -7,6 +7,7 @@ from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 
 from core.config import settings
+from services.organization_service import DEFAULT_ORGANIZATION_SLUG, get_default_organization
 from core.log_service import log_service
 from core.log_origins import LogLevel, LogOrigin
 from models import (
@@ -96,6 +97,44 @@ def ensure_sensor_indexes() -> None:
 
 if db is not None:
     ensure_sensor_indexes()
+
+
+def _default_org_fields() -> dict[str, str]:
+    org = get_default_organization()
+    if org:
+        return {"organization_id": org.id, "organization_slug": org.slug}
+    return {"organization_slug": DEFAULT_ORGANIZATION_SLUG}
+
+
+def migrate_devices_organization() -> None:
+    """Asigna organización por defecto a dispositivos legacy sin scope."""
+    if db is None:
+        return
+    try:
+        defaults = _default_org_fields()
+        result = db["devices"].update_many(
+            {
+                "$or": [
+                    {"organization_id": {"$exists": False}},
+                    {"organization_id": None},
+                    {"organization_slug": {"$exists": False}},
+                    {"organization_slug": None},
+                ]
+            },
+            {"$set": defaults},
+        )
+        if result.modified_count:
+            logger.info(
+                "Migrados %s dispositivos a organización %s",
+                result.modified_count,
+                defaults.get("organization_slug"),
+            )
+    except Exception as e:
+        logger.warning("No se pudo migrar organization en devices: %s", e)
+
+
+if db is not None:
+    migrate_devices_organization()
 
 # ============================================================================
 # LÓGICA DE NEGOCIO Y BASE DE DATOS
@@ -288,6 +327,42 @@ def build_payload_from_ph_post(reading: SensorPhPostReading) -> SensorMongoPaylo
 # GESTIÓN DE DISPOSITIVOS (MICROCONTROLADORES / ARDUINOS)
 # ============================================================================
 
+def _merge_org_filter(base_query: dict, org_filter: dict | None) -> dict:
+    if not org_filter:
+        return base_query
+    if not base_query:
+        return org_filter
+    return {"$and": [base_query, org_filter]}
+
+
+def get_organization_telemetry_keys(
+    *,
+    organization_id: str | None = None,
+    organization_slug: str | None = None,
+    org_filter: dict | None = None,
+) -> set[str]:
+    """Claves MQTT/arduino asociadas a dispositivos de una organización."""
+    if db is None:
+        return set()
+    try:
+        query = _active_device_filter()
+        if org_filter:
+            query = _merge_org_filter(query, org_filter)
+        keys: set[str] = set()
+        for doc in db["devices"].find(
+            query,
+            {"arduino_id": 1, "name": 1, "telemetry_key": 1},
+        ):
+            for field in ("arduino_id", "name", "telemetry_key"):
+                value = doc.get(field)
+                if value:
+                    keys.add(str(value))
+        return keys
+    except Exception as e:
+        logger.error("Error obteniendo claves de telemetría por organización: %s", e)
+        return set()
+
+
 def create_device(
     name: str,
     device_type: str,
@@ -296,6 +371,8 @@ def create_device(
     arduino_id: str | None = None,
     topic: str | None = None,
     telemetry_key: str | None = None,
+    organization_id: str | None = None,
+    organization_slug: str | None = None,
 ) -> Optional[dict]:
     """Crea un nuevo dispositivo en la base de datos."""
     if db is None:
@@ -308,6 +385,7 @@ def create_device(
         device_id = str(uuid.uuid4())
         now = utc_now()
         
+        org_defaults = _default_org_fields()
         device = {
             "_id": device_id,
             "id": device_id,
@@ -324,6 +402,8 @@ def create_device(
             "created_at": now,
             "updated_at": now,
             "active": True,
+            "organization_id": organization_id or org_defaults.get("organization_id"),
+            "organization_slug": organization_slug or org_defaults.get("organization_slug"),
         }
         
         collection.insert_one(device)
@@ -383,14 +463,18 @@ def find_device_by_key(key: str, *, include_inactive: bool = False) -> Optional[
         return None
 
 
-def get_all_devices(active_only: bool = True) -> list[dict]:
+def get_all_devices(
+    active_only: bool = True,
+    org_filter: dict | None = None,
+) -> list[dict]:
     """Obtiene todos los dispositivos registrados."""
     if db is None:
         return []
     
     try:
         collection = db["devices"]
-        query = _active_device_filter() if active_only else {}
+        query: dict = _active_device_filter() if active_only else {}
+        query = _merge_org_filter(query, org_filter)
         devices = list(collection.find(query).sort("created_at", -1))
         
         for device in devices:
@@ -495,7 +579,14 @@ def update_device_status(arduino_id: str, status: str, battery: int | None = Non
         logger.error("Error actualizando estado del dispositivo: %s", e)
         return None
 
-def register_new_microcontroller(arduino_id: str, device_name: str | None = None, device_type: str = "ESP8266", location: str = "") -> Optional[dict]:
+def register_new_microcontroller(
+    arduino_id: str,
+    device_name: str | None = None,
+    device_type: str = "ESP8266",
+    location: str = "",
+    organization_id: str | None = None,
+    organization_slug: str | None = None,
+) -> Optional[dict]:
     """Registra un nuevo microcontrolador detectado automáticamente."""
     if db is None:
         return None
@@ -519,6 +610,8 @@ def register_new_microcontroller(arduino_id: str, device_name: str | None = None
             device_type=device_type,
             location=location,
             arduino_id=key,
+            organization_id=organization_id,
+            organization_slug=organization_slug,
         )
         
         if device:

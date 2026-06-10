@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { getApiAuthHeaders } from '../services/apiContext.js'
 
 export const useDeviceStore = defineStore('device', () => {
   // State
@@ -29,7 +30,7 @@ export const useDeviceStore = defineStore('device', () => {
     
     try {
       const url = apiUrl || `${import.meta.env.VITE_API_URL || ''}/api/devices`
-      const response = await fetch(url)
+      const response = await fetch(url, { headers: getApiAuthHeaders() })
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`)
@@ -58,7 +59,7 @@ export const useDeviceStore = defineStore('device', () => {
       const apiUrl = import.meta.env.VITE_API_URL || ''
       const response = await fetch(`${apiUrl}/api/devices`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getApiAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(deviceData)
       })
       
@@ -88,7 +89,7 @@ export const useDeviceStore = defineStore('device', () => {
       const apiUrl = import.meta.env.VITE_API_URL || ''
       const response = await fetch(`${apiUrl}/api/devices/${deviceId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getApiAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(updateData)
       })
       
@@ -119,7 +120,8 @@ export const useDeviceStore = defineStore('device', () => {
     try {
       const apiUrl = import.meta.env.VITE_API_URL || ''
       const response = await fetch(`${apiUrl}/api/devices/${deviceId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: getApiAuthHeaders(),
       })
       
       if (!response.ok) {
@@ -150,7 +152,7 @@ export const useDeviceStore = defineStore('device', () => {
       const apiUrl = import.meta.env.VITE_API_URL || ''
       const response = await fetch(`${apiUrl}/api/devices/detect`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getApiAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(detectionData)
       })
       
@@ -185,7 +187,9 @@ export const useDeviceStore = defineStore('device', () => {
     
     try {
       const apiUrl = import.meta.env.VITE_API_URL || ''
-      const response = await fetch(`${apiUrl}/api/devices/detect-available`)
+      const response = await fetch(`${apiUrl}/api/devices/detect-available`, {
+        headers: getApiAuthHeaders(),
+      })
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`)

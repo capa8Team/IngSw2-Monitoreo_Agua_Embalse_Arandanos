@@ -1,3 +1,5 @@
+import { getApiAuthHeaders } from './apiContext.js'
+
 function resolvePublicApiBase() {
   const raw = import.meta.env.VITE_API_URL
   if (raw === undefined || raw === null || String(raw).trim() === '') return ''
@@ -7,16 +9,8 @@ function resolvePublicApiBase() {
 const API_URL = resolvePublicApiBase()
 
 export async function fetchAccountsActivity({ days = 30 } = {}) {
-  const token = localStorage.getItem('access_token')
-  if (!token) {
-    throw new Error('No hay sesión activa (access_token faltante)')
-  }
-
   const res = await fetch(`${API_URL}/api/admin/activity/users?days=${encodeURIComponent(days)}`, {
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
+    headers: getApiAuthHeaders({ Accept: 'application/json' }),
   })
 
   const body = await res.json().catch(() => ({}))

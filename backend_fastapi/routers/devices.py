@@ -1,6 +1,9 @@
 import logging
-from fastapi import APIRouter, HTTPException, Query
+from typing import Annotated
 
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from core.tenant import TenantContext, ensure_device_in_tenant, get_optional_tenant_context
 from models import DeviceCreate, DeviceResponse, DeviceUpdate, DeviceDetectionPayload
 from services.mongodb import (
     create_device, get_device, get_all_devices, update_device,
@@ -17,13 +20,14 @@ router = APIRouter(prefix="/api/devices", tags=["Dispositivos"])
 
 
 @router.get("", response_model=list[DeviceResponse])
-def list_devices(active_only: bool = Query(True, description="Mostrar solo dispositivos activos")):
+def list_devices(
+    tenant: Annotated[TenantContext, Depends(get_optional_tenant_context)],
+    active_only: bool = Query(True, description="Mostrar solo dispositivos activos"),
+):
     """
-    Obtiene la lista de todos los dispositivos registrados.
-    
-    - **active_only**: Si es True, solo devuelve dispositivos activos
+    Obtiene la lista de dispositivos registrados, filtrados por organización activa.
     """
-    devices = get_all_devices(active_only=active_only)
+    devices = get_all_devices(active_only=active_only, org_filter=tenant.device_filter())
     
     if not devices:
         log_service.log(
@@ -36,17 +40,11 @@ def list_devices(active_only: bool = Query(True, description="Mostrar solo dispo
 
 
 @router.post("", response_model=DeviceResponse, status_code=201)
-async def create_new_device(payload: DeviceCreate) -> DeviceResponse:
-    """
-    Crea un nuevo dispositivo/microcontrolador.
-    
-    Parámetros:
-    - **name**: Nombre del dispositivo (requerido)
-    - **device_type**: Tipo de microcontrolador (ESP8266, Arduino, STM32, other)
-    - **location**: Ubicación o zona del dispositivo
-    - **city**: Ciudad donde está ubicado (para datos de clima)
-    - **arduino_id**: ID del Arduino (opcional, puede ser auto-detectado)
-    """
+async def create_new_device(
+    payload: DeviceCreate,
+    tenant: Annotated[TenantContext, Depends(get_optional_tenant_context)],
+) -> DeviceResponse:
+    """Crea un nuevo dispositivo asociado a la organización activa."""
     device = create_device(
         name=payload.name,
         device_type=payload.device_type,
@@ -55,6 +53,8 @@ async def create_new_device(payload: DeviceCreate) -> DeviceResponse:
         arduino_id=payload.arduino_id,
         topic=payload.topic,
         telemetry_key=payload.telemetry_key,
+        organization_id=tenant.organization_id,
+        organization_slug=tenant.organization_slug,
     )
     
     if not device:
@@ -64,28 +64,26 @@ async def create_new_device(payload: DeviceCreate) -> DeviceResponse:
         LogOrigin.DASHBOARD, LogLevel.INFO,
         f"Nuevo dispositivo creado: {payload.name}",
         component="api.devices", operation="create",
-        details={"device_type": payload.device_type, "location": payload.location, "city": payload.city}
+        details={
+            "device_type": payload.device_type,
+            "location": payload.location,
+            "city": payload.city,
+            "organization_id": tenant.organization_id,
+        }
     )
     
     return DeviceResponse(**device)
 
 
 @router.post("/detect", response_model=DeviceResponse, status_code=201)
-async def detect_microcontroller(payload: DeviceDetectionPayload) -> DeviceResponse:
-    """
-    Detecta y registra un nuevo microcontrolador automáticamente.
-
-    Este endpoint se llama cuando el frontend detecta un nuevo dispositivo.
-
-    Parámetros:
-    - **arduino_id**: ID del Arduino detectado (requerido)
-    - **device_name**: Nombre personalizado del dispositivo (opcional)
-    - **device_type**: Tipo de microcontrolador (ESP8266, Arduino, STM32, other)
-    - **location**: Ubicación del dispositivo (opcional)
-    """
-    # Verificar si ya existe
+async def detect_microcontroller(
+    payload: DeviceDetectionPayload,
+    tenant: Annotated[TenantContext, Depends(get_optional_tenant_context)],
+) -> DeviceResponse:
+    """Detecta y registra un microcontrolador en la organización activa."""
     existing = get_device_by_arduino_id(payload.arduino_id)
     if existing:
+        ensure_device_in_tenant(existing, tenant)
         log_service.log(
             LogOrigin.DASHBOARD, LogLevel.WARN,
             f"Intento de registrar microcontrolador duplicado: {payload.arduino_id}",
@@ -93,12 +91,13 @@ async def detect_microcontroller(payload: DeviceDetectionPayload) -> DeviceRespo
         )
         return DeviceResponse(**existing)
 
-    # Registrar nuevo
     device = register_new_microcontroller(
         arduino_id=payload.arduino_id,
         device_name=payload.device_name,
         device_type=payload.device_type,
-        location=payload.location or ""
+        location=payload.location or "",
+        organization_id=tenant.organization_id,
+        organization_slug=tenant.organization_slug,
     )
 
     if not device:
@@ -108,35 +107,29 @@ async def detect_microcontroller(payload: DeviceDetectionPayload) -> DeviceRespo
         LogOrigin.DASHBOARD, LogLevel.INFO,
         f"Nuevo microcontrolador detectado: {payload.arduino_id}",
         component="api.devices", operation="detect",
-        details={"device_type": payload.device_type}
+        details={"device_type": payload.device_type, "organization_id": tenant.organization_id}
     )
 
     return DeviceResponse(**device)
 
 
 @router.get("/detect-available")
-async def get_available_microcontrollers():
-    """
-    Obtiene la lista de microcontroladores disponibles para registrar.
-    (Basado en los Arduino IDs detectados en las lecturas de sensores)
-    """
+async def get_available_microcontrollers(
+    tenant: Annotated[TenantContext, Depends(get_optional_tenant_context)],
+):
+    """Microcontroladores disponibles para registrar en la organización activa."""
     from services.mongodb import db
 
     if db is None:
         return {"available": [], "total": 0}
 
     try:
-        # Obtener todos los arduino_id únicos de sensor_readings
         sensor_collection = db["sensor_readings"]
         available = sensor_collection.distinct("arduino_id")
 
-        # Solo dispositivos activos cuentan como registrados
-        device_collection = db["devices"]
+        org_devices = get_all_devices(active_only=True, org_filter=tenant.device_filter())
         registered_keys: set[str] = set()
-        for doc in device_collection.find(
-            {"active": {"$ne": False}},
-            {"arduino_id": 1, "name": 1, "telemetry_key": 1, "topic": 1},
-        ):
+        for doc in org_devices:
             for field in ("arduino_id", "name", "telemetry_key"):
                 if doc.get(field):
                     registered_keys.add(doc[field])
@@ -155,23 +148,26 @@ async def get_available_microcontrollers():
 
 
 @router.get("/{device_id}", response_model=DeviceResponse)
-def get_device_info(device_id: str) -> DeviceResponse:
-    """
-    Obtiene la información de un dispositivo específico.
-    """
+def get_device_info(
+    device_id: str,
+    tenant: Annotated[TenantContext, Depends(get_optional_tenant_context)],
+) -> DeviceResponse:
+    """Obtiene la información de un dispositivo de la organización activa."""
     device = get_device(device_id)
-    
-    if not device:
-        raise HTTPException(status_code=404, detail="Dispositivo no encontrado")
-    
+    ensure_device_in_tenant(device, tenant)
     return DeviceResponse(**device)
 
 
 @router.put("/{device_id}", response_model=DeviceResponse)
-async def update_device_info(device_id: str, payload: DeviceUpdate) -> DeviceResponse:
-    """
-    Actualiza la información de un dispositivo.
-    """
+async def update_device_info(
+    device_id: str,
+    payload: DeviceUpdate,
+    tenant: Annotated[TenantContext, Depends(get_optional_tenant_context)],
+) -> DeviceResponse:
+    """Actualiza un dispositivo de la organización activa."""
+    existing = get_device(device_id)
+    ensure_device_in_tenant(existing, tenant)
+
     device = update_device(
         device_id=device_id,
         name=payload.name,
@@ -196,10 +192,14 @@ async def update_device_info(device_id: str, payload: DeviceUpdate) -> DeviceRes
 
 
 @router.delete("/{device_id}", status_code=204)
-async def delete_device_endpoint(device_id: str):
-    """
-    Elimina (desactiva) un dispositivo.
-    """
+async def delete_device_endpoint(
+    device_id: str,
+    tenant: Annotated[TenantContext, Depends(get_optional_tenant_context)],
+):
+    """Elimina (desactiva) un dispositivo de la organización activa."""
+    existing = get_device(device_id)
+    ensure_device_in_tenant(existing, tenant)
+
     success = delete_device(device_id)
     
     if not success:
@@ -213,19 +213,16 @@ async def delete_device_endpoint(device_id: str):
 
 
 @router.post("/{device_id}/status")
-async def update_device_connection_status(device_id: str, status: str = "online", battery: int | None = None):
-    """
-    Actualiza el estado de conexión de un dispositivo.
-    
-    Parámetros:
-    - **status**: Estado del dispositivo (online, offline, unknown)
-    - **battery**: Porcentaje de batería (0-100)
-    """
+async def update_device_connection_status(
+    device_id: str,
+    tenant: Annotated[TenantContext, Depends(get_optional_tenant_context)],
+    status: str = Query("online"),
+    battery: int | None = Query(None),
+):
+    """Actualiza el estado de conexión de un dispositivo."""
     device = get_device(device_id)
-    if not device:
-        raise HTTPException(status_code=404, detail="Dispositivo no encontrado")
+    ensure_device_in_tenant(device, tenant)
     
-    # Usar arduino_id para actualizar estado
     if device.get("arduino_id"):
         device = update_device_status(
             arduino_id=device["arduino_id"],
@@ -240,16 +237,13 @@ async def update_device_connection_status(device_id: str, status: str = "online"
 
 
 @router.get("/{device_id}/weather")
-async def get_device_weather(device_id: str):
-    """
-    Obtiene el clima actual del lugar donde está ubicado el dispositivo.
-    
-    Usa la ciudad configurada en el dispositivo para obtener datos de OpenWeather.
-    """
+async def get_device_weather(
+    device_id: str,
+    tenant: Annotated[TenantContext, Depends(get_optional_tenant_context)],
+):
+    """Obtiene el clima del dispositivo (organización activa)."""
     device = get_device(device_id)
-    
-    if not device:
-        raise HTTPException(status_code=404, detail="Dispositivo no encontrado")
+    ensure_device_in_tenant(device, tenant)
     
     city = (device.get("city") or device.get("location") or "").strip()
     if not city:
@@ -278,12 +272,7 @@ async def get_device_weather(device_id: str):
 
 @router.get("/weather/{city}")
 async def get_weather_by_city(city: str):
-    """
-    Obtiene el clima actual para una ciudad específica desde OpenWeather.
-    
-    Parámetros:
-    - **city**: Nombre de la ciudad (ej: Madrid, Buenos Aires)
-    """
+    """Obtiene el clima actual para una ciudad específica desde OpenWeather."""
     if not city or not city.strip():
         raise HTTPException(status_code=400, detail="Nombre de ciudad no válido")
     

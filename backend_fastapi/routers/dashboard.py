@@ -1,8 +1,12 @@
 import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, Query
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from core.tenant import TenantContext, ensure_device_in_tenant, get_optional_tenant_context
 from models import DashboardResponse, SensorData, Metadata
-from services.mongodb import update_dashboard_state_from_mongodb
+from services.mongodb import find_device_by_key, update_dashboard_state_from_mongodb
 from core.log_service import log_service
 from core.log_origins import LogLevel, LogOrigin
 
@@ -34,11 +38,17 @@ def _empty_dashboard() -> DashboardResponse:
 
 @router.get("", response_model=DashboardResponse)
 def get_dashboard_data(
+    tenant: Annotated[TenantContext, Depends(get_optional_tenant_context)],
     arduino_id: str | None = Query(
         None,
         description="Filtrar lecturas por ID de Arduino/microcontrolador",
     ),
 ) -> DashboardResponse:
+    if arduino_id:
+        device = find_device_by_key(arduino_id)
+        if device:
+            ensure_device_in_tenant(device, tenant)
+
     state = update_dashboard_state_from_mongodb(arduino_id=arduino_id)
     if state is None:
         logger.warning("No hay datos en la BD. Retornando estado vacío.")

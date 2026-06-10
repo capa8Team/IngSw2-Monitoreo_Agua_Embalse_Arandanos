@@ -12,6 +12,7 @@
       @logout="handleLogout"
       @add-device="openAddDeviceFromDeviceList"
       @devices-changed="onDevicesChanged"
+      @organization-changed="onOrganizationChanged"
     />
   </div>
 
@@ -328,6 +329,9 @@
         </button>
         <div>
           <h1 class="header-title">Gestion de usuarios</h1>
+          <p v-if="activeOrganizationName" class="org-assign-hint header-org-label">
+            Organización: {{ activeOrganizationName }}
+          </p>
           <p class="header-subtitle">Crea cuentas y administra roles en Supabase</p>
         </div>
       </div>
@@ -357,6 +361,7 @@
 
           <div class="user-creation-form">
             <h3>Crear nueva cuenta</h3>
+            <p class="org-assign-hint">Organización: {{ activeOrganizationName }}</p>
             <div class="form-grid">
               <div class="form-group">
                 <label>Email:</label>
@@ -508,7 +513,10 @@
         </button>
         <div>
           <h1 class="header-title">Actividad de cuentas</h1>
-          <p class="header-subtitle">Monitoreo de inicios de sesión (solo administradores)</p>
+          <p v-if="activeOrganizationName" class="org-assign-hint header-org-label">
+            Organización: {{ activeOrganizationName }}
+          </p>
+          <p class="header-subtitle">Monitoreo de inicios de sesión de esta organización</p>
         </div>
       </div>
       <div class="header-center admin-top-actions">
@@ -703,10 +711,8 @@ import { checkAndSendAlerts } from '../services/AlertService.js'
 import { fetchDashboardData, fetchSensorHistory, IS_SIMULATED_MODE, DATA_MODE } from '../services/ArduinoConfig.js'
 import {
   createUserInSupabase,
-  fetchSupabaseAuthUsersForAdmin,
   deleteUserFromSupabase,
   getAlertLimitsByAdmin,
-  getCurrentUser,
 } from '../services/SupabaseAuthService.js'
 import { ensureSupabaseAdminSession } from '../services/supabaseSessionBridge.js'
 import {
@@ -715,10 +721,13 @@ import {
   hasValidSessionToken,
   isAdminRole,
   ADMIN_ONLY_VIEWS,
+  fetchOrganizationUsersForAdmin,
 } from '../services/sessionAuth.js'
 import { fetchAccountsActivity } from '../services/adminActivityService.js'
+import { getActiveOrganizationName } from '../services/apiContext.js'
 
 const router = useRouter()
+const activeOrganizationName = computed(() => getActiveOrganizationName())
 const deviceStore = useDeviceStore()
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
@@ -909,6 +918,13 @@ const onDevicesChanged = async () => {
   if (devices.value.length > 0 && !devices.value.some((d) => d.id === selectedDeviceId.value)) {
     selectedDeviceId.value = devices.value[0].id
   }
+}
+
+const onOrganizationChanged = async () => {
+  selectedDeviceId.value = null
+  currentView.value = 'devices'
+  deviceStore.reset()
+  await onDevicesChanged()
 }
 
 const selectedDevice = computed(() => {
@@ -1428,9 +1444,14 @@ const createNewUser = async () => {
   const sanitizedEmail = String(newUser.value.email || '').trim().toLowerCase()
   const sanitizedFullName = String(newUser.value.fullName || '').trim()
 
-  // Validar campos
   if (!sanitizedEmail || !newUser.value.password || !sanitizedFullName) {
     userCreationError.value = 'Por favor completa todos los campos'
+    userCreationSuccess.value = ''
+    return
+  }
+
+  if (String(newUser.value.password).length < 6) {
+    userCreationError.value = 'La contrasena debe tener al menos 6 caracteres'
     userCreationSuccess.value = ''
     return
   }
@@ -1486,7 +1507,7 @@ const loadExistingUsers = async () => {
   console.log('[loadExistingUsers] Iniciando carga...')
   try {
     await refreshSupabaseSessionState()
-    const result = await fetchSupabaseAuthUsersForAdmin()
+    const result = await fetchOrganizationUsersForAdmin()
     console.log('[loadExistingUsers] Resultado:', result)
 
     if (Array.isArray(result.users)) {
@@ -2124,7 +2145,19 @@ onUnmounted(() => {
 .user-creation-form h3 {
   margin-top: 0;
   color: #333;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
+}
+
+.org-assign-hint {
+  margin: 0 0 16px;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.header-org-label {
+  margin: 4px 0 0;
+  font-weight: 600;
+  color: #2e7d32;
 }
 
 .form-grid {

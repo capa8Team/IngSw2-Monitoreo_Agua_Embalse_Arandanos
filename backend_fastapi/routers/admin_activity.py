@@ -12,7 +12,12 @@ from sqlalchemy.orm import Session
 from db.database import SessionLocal, init_log_tables
 from db.log_models import LoginLogDB
 from db.supabase_db import is_dns_resolution_error, is_ipv6_unreachable_error
+from core.tenant import TenantContext, get_tenant_context
 from routers.auth_jwt import require_admin_payload
+from services.organization_service import (
+    fetch_organization_member_emails,
+    user_is_org_admin,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -102,17 +107,42 @@ def _aggregate_activity(rows: list, *, days: int) -> dict:
     }
 
 
+def _filter_rows_for_organization(rows: list, *, organization_id: str) -> list:
+    member_emails = fetch_organization_member_emails(organization_id)
+    org_id_str = str(organization_id)
+    filtered = []
+    for row in rows:
+        details = row.details or {}
+        email = str(details.get("user_email") or "").strip().lower()
+        log_org = str(details.get("organization_id") or "").strip()
+        if email and email in member_emails:
+            filtered.append(row)
+        elif log_org and log_org == org_id_str:
+            filtered.append(row)
+    return filtered
+
+
 @router.get("/users")
 def list_user_activity(
     _admin: Annotated[dict, Depends(require_admin_payload)],
+    tenant: Annotated[TenantContext, Depends(get_tenant_context)],
     days: int = Query(30, ge=1, le=365),
     limit: int = Query(5000, ge=1, le=20000),
     db: Session = Depends(get_log_db),
 ):
     """
     Devuelve un resumen por cuenta basado en eventos de login.
-    Requiere rol administrador.
+    Solo cuentas de la organización activa del administrador.
     """
+    organization_id = tenant.organization_id
+    admin_user_id = tenant.user_id or ""
+    if not organization_id:
+        raise HTTPException(status_code=400, detail="Organización activa no definida en la sesión")
+    if not user_is_org_admin(user_id=admin_user_id, organization_id=organization_id):
+        raise HTTPException(
+            status_code=403,
+            detail="No tienes permisos de administrador en esa organización",
+        )
     try:
         init_log_tables()
     except Exception as exc:
@@ -128,7 +158,10 @@ def list_user_activity(
             .limit(limit)
             .all()
         )
-        return _aggregate_activity(rows, days=days)
+        scoped_rows = _filter_rows_for_organization(rows, organization_id=organization_id)
+        result = _aggregate_activity(scoped_rows, days=days)
+        result["organization_id"] = organization_id
+        return result
     except OperationalError as exc:
         logger.error("Conexión a Supabase Postgres fallida: %s", exc)
         if is_ipv6_unreachable_error(exc):

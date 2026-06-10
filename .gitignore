@@ -31,7 +31,6 @@ venv/
 
 # Secrets, credenciales y entorno local
 .env
-.env
 backend_fastapi/.env
 backend_fastapi/.env.local
 *.credentials
@@ -40,6 +39,9 @@ backend_fastapi/.env.local
 **/credenciales*.md
 docs/CREDENCIALES_EQUIPO.md
 secrets/
+
+# SQL local con datos de orgs/cuentas (no subir)
+database/supabase/CREATE_NEW_ORGANIZATION_AND_ADMIN.sql
 SketchArduino/**/secrets.h
 SketchArduino/**/Secret.h
 

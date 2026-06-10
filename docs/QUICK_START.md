@@ -25,8 +25,8 @@ VITE_API_URL=http://localhost:8000
 
 1. En Supabase Dashboard → **SQL Editor**
 2. Clic en **New Query**
-3. Copia todo el contenido de `SUPABASE_SETUP.sql`
-4. Pega en el editor y ejecuta (Play button)
+3. Ejecuta los scripts en `database/supabase/` según el orden en `database/supabase/README.md`
+4. Como mínimo: `CREATE_ORGANIZATIONS.sql`, `FIX_USERS_ROLES_RLS_RECURSION.sql`, `ADMIN_LIST_AUTH_USERS.sql`
 
 ✅ ¡Base de datos lista!
 
@@ -161,7 +161,7 @@ Esperado: Redirige a /login
 - [ ] Usa admin@example.com si está en modo test
 
 ### Base de datos vacía
-- [ ] Verifica que ejecutaste SUPABASE_SETUP.sql
+- [ ] Verifica que ejecutaste los scripts SQL de `database/supabase/`
 - [ ] En Supabase → SQL Editor → verificar ejecución
 - [ ] Ejecutar nuevamente si es necesario
 
@@ -221,16 +221,13 @@ Esperado: Redirige a /login
 
 ```
 src/
-├── router.js               👈 Rutas
-├── stores/
-│   └── authStore.js        👈 Estado
-├── services/
-│   └── supabaseClient.js    👈 API
+├── router.js                    👈 Rutas
+├── components/DeviceDashboard.vue 👈 Dashboard + admin
+├── services/sessionAuth.js        👈 Login JWT
+├── services/SupabaseAuthService.js 👈 Usuarios Supabase
 └── views/
-    ├── Login.vue           👈 Inicio
-    ├── AdminDashboard.vue  👈 Admin
-    ├── AdminUsers.vue      👈 Usuarios
-    └── AdminAlerts.vue     👈 Alertas
+    ├── Login.vue                👈 Inicio de sesión
+    └── HistoricalData.vue       👈 Histórico
 ```
 
 ---
@@ -257,7 +254,7 @@ src/
 
 1. **Documentación Completa:** Ver `AUTHENTICATION_GUIDE.md`
 2. **Cambios Realizados:** Ver `CHANGELOG.md`
-3. **SQL Setup:** Ver `SUPABASE_SETUP.sql`
+3. **SQL Setup:** Ver `database/supabase/README.md`
 4. **Consola del Navegador:** F12 → Console (errores)
 5. **Supabase Dashboard:** Verificar estado de BD
 
@@ -268,7 +265,7 @@ src/
 - [ ] Creé cuenta en Supabase
 - [ ] Copié credenciales
 - [ ] Creé archivo `.env`
-- [ ] Ejecuté `SUPABASE_SETUP.sql`
+- [ ] Ejecuté los scripts SQL de Supabase (`database/supabase/`)
 - [ ] Ejecuté `npm install`
 - [ ] Ejecuté `npm run dev`
 - [ ] Accedí a `/login`
