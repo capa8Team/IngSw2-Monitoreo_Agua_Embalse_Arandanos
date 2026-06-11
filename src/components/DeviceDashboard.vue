@@ -332,18 +332,13 @@
           <p v-if="activeOrganizationName" class="org-assign-hint header-org-label">
             Organización: {{ activeOrganizationName }}
           </p>
-          <p class="header-subtitle">Crea cuentas y administra roles en Supabase</p>
+          <p class="header-subtitle">Crea cuentas y administra roles de la organización</p>
         </div>
       </div>
       <div class="header-center admin-top-actions">
         <button class="admin-nav-btn active">Gestion de usuarios</button>
       </div>
       <div class="header-right">
-        <div class="data-source-badge" :class="`source-${selectedDevice.dataSource}`">
-          <span v-if="selectedDevice.dataSource === 'real'">📊 Datos Reales</span>
-          <span v-else-if="selectedDevice.dataSource === 'simulated'">⚙️ Datos Simulados</span>
-          <span v-else>❓ Fuente Desconocida</span>
-        </div>
         <button class="logout-btn" type="button" @click="handleLogout">Cerrar sesión</button>
       </div>
     </header>
@@ -403,13 +398,11 @@
           <div class="users-list">
             <div class="users-list-header">
               <div class="users-list-title-block">
-                <h3>Usuarios en Supabase Auth</h3>
+                <h3>Usuarios existentes</h3>
                 <p v-if="!isLoadingUsers" class="users-count-summary">
-                  <strong>{{ supabaseUsersTotal }}</strong> en Supabase Auth —
+                  <strong>{{ supabaseUsersTotal }}</strong> usuarios —
                   <strong class="verified-count">{{ supabaseUsersVerified }}</strong> verificados,
                   <strong class="pending-count">{{ supabaseUsersPending }}</strong> pendientes
-                  <span v-if="usersListSource === 'supabase_auth'" class="users-source-tag">· sincronizado con Auth</span>
-                  <span v-else-if="usersListSource === 'users_roles'" class="users-source-tag users-source-warn">· incompleto (falta RPC)</span>
                 </p>
               </div>
               <button class="refresh-users-btn" @click="loadExistingUsers" :disabled="isLoadingUsers">
@@ -487,13 +480,13 @@
             </div>
             <div v-else class="no-users">
               <template v-if="supabaseSessionWarning">
-                Inicia sesión con una cuenta admin de Supabase para ver el listado.
+                No se pudo cargar el listado. Cierra sesión e inicia de nuevo con tu cuenta de administrador.
               </template>
               <template v-else-if="existingUsers.length > 0 && displayedUsers.length === 0">
                 Ningún usuario coincide con el filtro seleccionado.
               </template>
               <template v-else>
-                No hay usuarios en Supabase Auth (total: 0).
+                No hay usuarios registrados en esta organización.
               </template>
             </div>
           </div>
@@ -724,7 +717,11 @@ import {
   fetchOrganizationUsersForAdmin,
 } from '../services/sessionAuth.js'
 import { fetchAccountsActivity } from '../services/adminActivityService.js'
-import { getActiveOrganizationName, getApiAuthHeaders } from '../services/apiContext.js'
+import {
+  getActiveOrganizationName,
+  getApiAuthHeaders,
+  getSensorLimitsStorageKey,
+} from '../services/apiContext.js'
 
 const router = useRouter()
 const activeOrganizationName = computed(() => getActiveOrganizationName())
@@ -894,7 +891,7 @@ const devices = computed(() => {
   const apiList = deviceStore.devices
 
   if (!apiList.length) {
-    if (IS_SIMULATED_MODE) {
+    if (IS_SIMULATED_MODE && !deviceStore.loading) {
       const card = buildDefaultSimulatedCard()
       return [mergeCardWithTelemetry(card, telemetryByDeviceId.value[card.id])]
     }
@@ -920,10 +917,28 @@ const onDevicesChanged = async () => {
   }
 }
 
+const loadSensorLimitsFromStorage = () => {
+  const savedConfig = localStorage.getItem(getSensorLimitsStorageKey())
+  if (!savedConfig) return
+  try {
+    const parsed = JSON.parse(savedConfig)
+    SENSOR_LIMITS_CONFIG.value = parsed
+    editingLimits.value = JSON.parse(savedConfig)
+  } catch (e) {
+    console.error('Error al cargar configuración guardada:', e)
+  }
+}
+
 const onOrganizationChanged = async () => {
   selectedDeviceId.value = null
   currentView.value = 'devices'
+  telemetryByDeviceId.value = {}
+  historyRecords.value = []
+  existingUsers.value = []
+  accountsActivity.value = []
+  stopUsersAutoRefresh()
   deviceStore.reset()
+  loadSensorLimitsFromStorage()
   await onDevicesChanged()
 }
 
@@ -1310,6 +1325,10 @@ const selectDevice = (device) => {
 }
 
 const openHistory = () => {
+  void import('../services/historicalDataService.js').then(({ prefetchHistoricalData }) => {
+    prefetchHistoricalData()
+    deviceStore.prefetchDevicesForActiveOrg()
+  })
   router.push('/historical')
 }
 
@@ -1324,7 +1343,9 @@ const openAlertConfigView = () => {
 
 const refreshSupabaseSessionState = async () => {
   const check = await ensureSupabaseAdminSession()
-  supabaseSessionWarning.value = check.ok ? '' : check.message
+  supabaseSessionWarning.value = check.ok
+    ? ''
+    : 'No se pudo validar la sesión de administrador. Cierra sesión e inicia de nuevo.'
   return check.ok
 }
 
@@ -1428,7 +1449,7 @@ const saveAlertConfig = async (sensorType) => {
     SENSOR_LIMITS_CONFIG.value[sensorType] = JSON.parse(JSON.stringify(config))
 
     const configToSave = { ...SENSOR_LIMITS_CONFIG.value }
-    localStorage.setItem('sensorLimitsConfig', JSON.stringify(configToSave))
+    localStorage.setItem(getSensorLimitsStorageKey(), JSON.stringify(configToSave))
 
     hasUnsavedChanges.value = false
     lastSavedLimits = JSON.parse(JSON.stringify(SENSOR_LIMITS_CONFIG.value))
@@ -1482,7 +1503,7 @@ const createNewUser = async () => {
 
     if (result.success) {
       userCreationSuccess.value =
-        `Usuario ${sanitizedEmail} creado en Supabase. Aparece en la lista como Pendiente hasta que confirme el correo; tras aceptar la invitación, pulsa Actualizar y pasará a Verificado.`
+        `Usuario ${sanitizedEmail} creado. Aparecerá como Pendiente hasta que confirme el correo; cuando lo haga, pulsa Actualizar y pasará a Verificado.`
       newUser.value = {
         email: '',
         password: '',
@@ -1538,14 +1559,14 @@ const loadExistingUsers = async () => {
 const deleteUser = async (userId) => {
   const target = existingUsers.value.find((u) => u.id === userId)
   const label = target?.email || userId
-  if (!confirm(`¿Eliminar permanentemente la cuenta ${label} en Supabase Auth?`)) {
+  if (!confirm(`¿Eliminar permanentemente la cuenta ${label}?`)) {
     return
   }
 
   try {
     const result = await deleteUserFromSupabase(userId)
     if (result.success) {
-      userCreationSuccess.value = `Cuenta ${label} eliminada de Supabase.`
+      userCreationSuccess.value = `Cuenta ${label} eliminada correctamente.`
       userCreationError.value = ''
       await loadExistingUsers()
     } else {
@@ -1639,29 +1660,15 @@ onMounted(async () => {
 
   enforceAdminOnlyViews()
 
-  await loadDevices()
+  deviceStore.hydrateFromCache()
+  loadSensorLimitsFromStorage()
   selectedDeviceId.value = null
 
-  console.log('[FRONTEND] VITE_DATA_MODE:', DATA_MODE)
-
-  // Cargar configuración de 3 valores desde localStorage PRIMERO
-  const savedConfig = localStorage.getItem('sensorLimitsConfig')
-  if (savedConfig) {
-    try {
-      const parsed = JSON.parse(savedConfig)
-      SENSOR_LIMITS_CONFIG.value = parsed
-      editingLimits.value = JSON.parse(savedConfig)
-      console.log('✅ Configuración de rangos cargada desde localStorage:', SENSOR_LIMITS_CONFIG.value)
-    } catch (e) {
-      console.error('Error al cargar configuración guardada:', e)
-    }
-  }
-
-  // Iniciar actualizaciones de sensores DESPUÉS de cargar configuración
+  void loadDevices()
   startSensorUpdates()
 
   if (isAdmin.value) {
-    await loadExistingUsers()
+    void loadExistingUsers()
   }
 })
 

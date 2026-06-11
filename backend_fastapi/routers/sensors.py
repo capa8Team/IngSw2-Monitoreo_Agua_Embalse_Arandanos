@@ -26,10 +26,9 @@ def _validate_arduino_for_tenant(arduino_id: str | None, tenant: TenantContext) 
     if not arduino_id:
         return
     device = find_device_by_key(arduino_id)
-    if device:
-        ensure_device_in_tenant(device, tenant)
-    elif tenant.organization_id:
+    if not device:
         raise HTTPException(status_code=403, detail="Dispositivo fuera de tu organización")
+    ensure_device_in_tenant(device, tenant)
 
 
 def _tenant_filters(tenant: TenantContext) -> tuple[dict, dict]:

@@ -4,11 +4,14 @@ import io
 from datetime import datetime
 from typing import Any, Optional
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from core.log_origins import VALID_ORIGINS
+from routers.auth_jwt import require_admin_payload
 from db.database import SessionLocal
 from db.log_models import LOG_MODEL_BY_TABLE
 
@@ -46,6 +49,7 @@ def list_origins():
 @router.get("/{origin}/export")
 def export_logs(
     origin: str,
+    _admin: Annotated[dict, Depends(require_admin_payload)],
     format: str = Query("txt", pattern="^(syslog|csv|txt)$"),
     level: Optional[str] = None,
     correlation_id: Optional[str] = None,
@@ -90,6 +94,7 @@ def export_logs(
 @router.get("/{origin}")
 def query_logs(
     origin: str,
+    _admin: Annotated[dict, Depends(require_admin_payload)],
     level: Optional[str] = None,
     component: Optional[str] = None,
     correlation_id: Optional[str] = None,

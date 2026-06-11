@@ -80,6 +80,10 @@ router.beforeEach(async (to, from, next) => {
     return
   }
 
+  if (to.path === '/dashboard') {
+    void import('./components/DeviceDashboard.vue')
+  }
+
   const renewed = await tryRenewAccessToken()
   if (!renewed) {
     clearSession()

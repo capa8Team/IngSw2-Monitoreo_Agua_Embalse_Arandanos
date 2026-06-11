@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field
@@ -234,6 +234,11 @@ def _issue_tokens_for_auth_user(*, email: str, user_id: str) -> dict:
 
     role = resolve_role_for_user(user_id=user_id, email=email)
     org_context = resolve_user_organization_context(user_id=user_id)
+    if not org_context.organizations:
+        raise HTTPException(
+            status_code=403,
+            detail="Usuario sin organización asignada",
+        )
     org_claims = organizations_to_claims(org_context.organizations)
     active_org_id = org_context.active_organization_id
 
@@ -314,10 +319,21 @@ def check_first_access(body: FirstAccessCheckBody):
 @router.get("/admin/organization-users")
 def admin_list_organization_users(
     payload: Annotated[dict, Depends(require_admin_payload)],
+    x_organization_id: Annotated[Optional[str], Header(alias="X-Organization-Id")] = None,
 ):
     """Lista usuarios de Auth que pertenecen a la organización activa del admin."""
     admin_user_id = str(payload.get("user_id") or "")
-    organization_id = str(payload.get("organization_id") or "").strip()
+    preferred_org = (x_organization_id or "").strip() or str(payload.get("organization_id") or "").strip()
+    org_context = resolve_user_organization_context(
+        user_id=admin_user_id,
+        preferred_organization_id=preferred_org or None,
+    )
+    organization_id = str(org_context.active_organization_id or "").strip()
+    if preferred_org and not user_can_access_organization(
+        user_id=admin_user_id,
+        organization_id=preferred_org,
+    ):
+        raise HTTPException(status_code=403, detail="Sin acceso a esta organización")
     if not organization_id:
         raise HTTPException(status_code=400, detail="Organización activa no definida en la sesión")
 

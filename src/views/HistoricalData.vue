@@ -5,6 +5,9 @@
         <ThemeToggleButton />
         <button class="back-btn" @click="router.back()">←</button>
         <h1>Datos Históricos</h1>
+        <p v-if="activeOrganizationName" class="org-context-label">
+          Organización: {{ activeOrganizationName }}
+        </p>
         <span class="source-badge" :class="isSimulatedMode ? 'source-simulated' : 'source-real'">
           {{ isSimulatedMode ? '⚙️ Datos simulados' : '📡 Datos en vivo' }}
         </span>
@@ -13,10 +16,28 @@
     </header>
 
     <main class="history-content">
-      <p v-if="initialLoading" class="history-loading-hint">Cargando datos históricos…</p>
-      <SensorChart sensorKey="ph"           v-model:period="phPeriod"   :chartData="chartData.ph"           :stats="chartStats.ph"           />
-      <SensorChart sensorKey="temperature"  v-model:period="tempPeriod" :chartData="chartData.temperature"  :stats="chartStats.temperature"  />
-      <SensorChart sensorKey="conductivity" v-model:period="condPeriod" :chartData="chartData.conductivity" :stats="chartStats.conductivity" />
+      <p v-if="chartsRefreshing" class="history-refresh-hint">Actualizando datos históricos…</p>
+      <SensorChart
+        sensorKey="ph"
+        v-model:period="phPeriod"
+        :chartData="chartData.ph"
+        :stats="chartStats.ph"
+        :loading="initialLoading && !hasChartData"
+      />
+      <SensorChart
+        sensorKey="temperature"
+        v-model:period="tempPeriod"
+        :chartData="chartData.temperature"
+        :stats="chartStats.temperature"
+        :loading="initialLoading && !hasChartData"
+      />
+      <SensorChart
+        sensorKey="conductivity"
+        v-model:period="condPeriod"
+        :chartData="chartData.conductivity"
+        :stats="chartStats.conductivity"
+        :loading="initialLoading && !hasChartData"
+      />
       <MeasurementsTable
         :rows="measurementRows"
         :total-rows="tableTotal"
@@ -40,6 +61,10 @@
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { isAdminRole } from '../services/sessionAuth.js'
+import {
+  getActiveOrganizationName,
+  ORGANIZATION_CHANGED_EVENT,
+} from '../services/apiContext.js'
 import ThemeToggleButton from '../components/ThemeToggleButton.vue'
 import SensorChart       from '../components/historical/SensorChart.vue'
 import MeasurementsTable from '../components/historical/MeasurementsTable.vue'
@@ -48,10 +73,12 @@ import { useHistoricalData } from '../composables/useHistoricalData.js'
 
 const router      = useRouter()
 const isUserAdmin = computed(() => isAdminRole(localStorage.getItem('userRole')))
+const activeOrganizationName = computed(() => getActiveOrganizationName())
 const showPdfModal = ref(false)
 
 const {
   measurementRows, exportRows, deviceOptions, tableTotal, tablePage, tableLoading, initialLoading,
+  chartsRefreshing, hasChartData,
   isSimulatedMode,
   phPeriod, tempPeriod, condPeriod,
   chartData, chartStats,
@@ -65,13 +92,23 @@ async function openPdfModal() {
   showPdfModal.value = true
 }
 
+async function onOrganizationChanged() {
+  stopPolling()
+  await refreshHistorical({ full: true, reset: true })
+  startPolling()
+}
+
 onMounted(async () => {
   await nextTick()
   await refreshHistorical({ full: true })
   startPolling()
+  window.addEventListener(ORGANIZATION_CHANGED_EVENT, onOrganizationChanged)
 })
 
-onBeforeUnmount(stopPolling)
+onBeforeUnmount(() => {
+  stopPolling()
+  window.removeEventListener(ORGANIZATION_CHANGED_EVENT, onOrganizationChanged)
+})
 </script>
 
 <style scoped>
@@ -107,6 +144,13 @@ onBeforeUnmount(stopPolling)
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.org-context-label {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #64748b;
+  font-weight: 500;
 }
 
 .source-badge {
@@ -151,14 +195,17 @@ onBeforeUnmount(stopPolling)
   color: #333;
 }
 
-.history-loading-hint {
-  margin: 0 0 12px;
-  padding: 10px 14px;
+.history-refresh-hint {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin: 0 0 4px;
+  padding: 8px 14px;
   border-radius: 8px;
   background: #e8f5e9;
   color: #2e7d32;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
+  text-align: center;
 }
 
 .pdf-btn {

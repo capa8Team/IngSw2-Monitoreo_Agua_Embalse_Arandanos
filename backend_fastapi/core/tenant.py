@@ -83,18 +83,83 @@ class TenantContext:
         return {"$or": clauses} if len(clauses) > 1 else clauses[0]
 
 
+def _organizations_from_jwt_claims(payload: dict) -> list[OrganizationInfo]:
+    """Organizaciones embebidas en el access token (evita consulta a Supabase por request)."""
+    raw = payload.get("organizations")
+    if not isinstance(raw, list) or not raw:
+        return []
+
+    orgs: list[OrganizationInfo] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        org_id = str(item.get("id") or "").strip()
+        if not org_id:
+            continue
+        orgs.append(
+            OrganizationInfo(
+                id=org_id,
+                name=str(item.get("name") or ""),
+                slug=str(item.get("slug") or DEFAULT_ORGANIZATION_SLUG),
+                org_role=str(item.get("org_role") or "employee"),
+            )
+        )
+    return orgs
+
+
+def _tenant_from_jwt_orgs(
+    *,
+    payload: dict,
+    user_id: str,
+    email: str,
+    jwt_orgs: list[OrganizationInfo],
+    x_organization_id: Optional[str],
+) -> TenantContext:
+    token_org_id = str(payload.get("organization_id") or "").strip() or None
+    header_org_id = (x_organization_id or "").strip() or None
+    preferred_org = header_org_id or token_org_id
+
+    if preferred_org and not any(o.id == preferred_org for o in jwt_orgs):
+        raise HTTPException(status_code=403, detail="Sin acceso a esta organización")
+
+    active_id: Optional[str] = None
+    if preferred_org and any(o.id == preferred_org for o in jwt_orgs):
+        active_id = preferred_org
+    elif token_org_id and any(o.id == token_org_id for o in jwt_orgs):
+        active_id = token_org_id
+    elif jwt_orgs:
+        active_id = jwt_orgs[0].id
+
+    if not active_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Organización activa no disponible",
+        )
+
+    active_slug = DEFAULT_ORGANIZATION_SLUG
+    for org in jwt_orgs:
+        if org.id == active_id:
+            active_slug = org.slug or DEFAULT_ORGANIZATION_SLUG
+            break
+
+    return TenantContext(
+        organization_id=active_id,
+        organization_slug=active_slug,
+        user_id=user_id or None,
+        email=email or None,
+        organizations=jwt_orgs,
+    )
+
+
 def _resolve_tenant(
     credentials: Optional[HTTPAuthorizationCredentials],
     x_organization_id: Optional[str],
 ) -> TenantContext:
-    default_org = get_default_organization()
-    default_slug = default_org.slug if default_org else DEFAULT_ORGANIZATION_SLUG
-    default_id = default_org.id if default_org else None
-
     if credentials is None:
+        default_org = get_default_organization()
         return TenantContext(
-            organization_id=default_id,
-            organization_slug=default_slug,
+            organization_id=default_org.id if default_org else None,
+            organization_slug=default_org.slug if default_org else DEFAULT_ORGANIZATION_SLUG,
             user_id=None,
             email=None,
             organizations=[],
@@ -110,6 +175,20 @@ def _resolve_tenant(
 
     email = str(payload.get("email") or payload.get("sub") or "")
     user_id = str(payload.get("user_id") or "")
+
+    jwt_orgs = _organizations_from_jwt_claims(payload)
+    if user_id and jwt_orgs:
+        return _tenant_from_jwt_orgs(
+            payload=payload,
+            user_id=user_id,
+            email=email,
+            jwt_orgs=jwt_orgs,
+            x_organization_id=x_organization_id,
+        )
+
+    default_org = get_default_organization()
+    default_slug = default_org.slug if default_org else DEFAULT_ORGANIZATION_SLUG
+
     token_org_id = payload.get("organization_id")
     header_org_id = (x_organization_id or "").strip() or None
     preferred_org = header_org_id or token_org_id
@@ -125,9 +204,18 @@ def _resolve_tenant(
         org = get_organization_by_id(active_id)
         if org:
             active_slug = org.slug
-    elif default_org:
-        active_id = default_org.id
-        active_slug = default_org.slug
+
+    if user_id and not org_context.organizations:
+        raise HTTPException(
+            status_code=403,
+            detail="Usuario sin organización asignada",
+        )
+
+    if user_id and not active_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Organización activa no disponible",
+        )
 
     if preferred_org and not user_can_access_organization(
         user_id=user_id,
@@ -165,13 +253,17 @@ def ensure_device_in_tenant(device: Optional[dict], tenant: TenantContext) -> No
         raise HTTPException(status_code=404, detail="Dispositivo no encontrado")
 
     device_org_id = device.get("organization_id")
+    tenant_org_id = tenant.organization_id
     device_slug = str(device.get("organization_slug") or DEFAULT_ORGANIZATION_SLUG)
     tenant_slug = str(tenant.organization_slug or DEFAULT_ORGANIZATION_SLUG)
 
-    if device_org_id and tenant.organization_id:
-        if str(device_org_id) != str(tenant.organization_id):
+    if device_org_id:
+        if not tenant_org_id or str(device_org_id) != str(tenant_org_id):
             raise HTTPException(status_code=403, detail="Dispositivo fuera de tu organización")
         return
+
+    if tenant_org_id and device_slug != tenant_slug:
+        raise HTTPException(status_code=403, detail="Dispositivo fuera de tu organización")
 
     if device_slug != tenant_slug:
         raise HTTPException(status_code=403, detail="Dispositivo fuera de tu organización")

@@ -284,12 +284,6 @@ def resolve_user_organization_context(
 
         active_id = organizations[0].id
 
-    else:
-
-        default_org = get_default_organization()
-
-        active_id = default_org.id if default_org else None
-
 
 
     return UserOrganizationContext(

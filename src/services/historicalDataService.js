@@ -1,4 +1,4 @@
-import { getApiAuthHeaders } from './apiContext.js'
+import { getActiveOrganizationId, getApiAuthHeaders } from './apiContext.js'
 import {
   IS_SIMULATED_MODE,
   buildSimulatedHistoricalReadings,
@@ -19,6 +19,50 @@ const CHART_LOOKBACK_DAYS = 7
 const CHART_FETCH_LIMIT = 500
 const INCREMENTAL_LIMIT = 100
 const TABLE_LIVE_PAGE_SIZE = 10
+const HISTORICAL_CACHE_PREFIX = 'historicalCache:'
+
+let readingsInFlight = null
+let tableInFlight = null
+
+function historicalCacheKey(orgId = getActiveOrganizationId()) {
+  return orgId ? `${HISTORICAL_CACHE_PREFIX}${orgId}` : ''
+}
+
+export function readHistoricalCache(orgId = getActiveOrganizationId()) {
+  const key = historicalCacheKey(orgId)
+  if (!key) return null
+  try {
+    const raw = sessionStorage.getItem(key)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+export function writeHistoricalCache(payload, orgId = getActiveOrganizationId()) {
+  const key = historicalCacheKey(orgId)
+  if (!key || !payload) return
+  try {
+    sessionStorage.setItem(key, JSON.stringify({
+      ...payload,
+      cachedAt: Date.now(),
+    }))
+  } catch {
+    // sessionStorage lleno o no disponible
+  }
+}
+
+export function prefetchHistoricalData() {
+  void fetchHistoricalReadings()
+  void fetchHistoricalTable({
+    page: 1,
+    pageSize: 10,
+    sensor: 'all',
+    live: true,
+  })
+}
 
 function resolveApiBase() {
   const raw = import.meta.env.VITE_API_URL
@@ -93,26 +137,41 @@ export async function fetchHistoricalReadings({
     return buildSimulatedHistoricalReadings({ since, until, days, limit })
   }
 
-  const api = resolveApiBase()
-  const params = new URLSearchParams()
-  params.set('limit', String(limit))
-  if (since) params.set('since', since.toISOString())
-  if (until) params.set('until', until.toISOString())
-  if (!since && !until) params.set('days', String(days))
+  if (!since && !until && readingsInFlight) {
+    return readingsInFlight
+  }
 
-  try {
-    const res = await fetch(`${api}/api/sensors/history/range?${params}`, {
-      headers: getApiAuthHeaders(),
-    })
-    if (res.ok) {
-      const payload = await res.json()
-      if (Array.isArray(payload)) {
-        return payload.map(normalizeRangeRecord)
+  const run = async () => {
+    const api = resolveApiBase()
+    const params = new URLSearchParams()
+    params.set('limit', String(limit))
+    if (since) params.set('since', since.toISOString())
+    if (until) params.set('until', until.toISOString())
+    if (!since && !until) params.set('days', String(days))
+
+    try {
+      const res = await fetch(`${api}/api/sensors/history/range?${params}`, {
+        headers: getApiAuthHeaders(),
+      })
+      if (res.ok) {
+        const payload = await res.json()
+        if (Array.isArray(payload)) {
+          return payload.map(normalizeRangeRecord)
+        }
       }
-    }
-  } catch { /* network error → fallback */ }
+    } catch { /* network error → fallback */ }
 
-  return buildFallbackReadings()
+    return buildFallbackReadings()
+  }
+
+  if (!since && !until) {
+    readingsInFlight = run().finally(() => {
+      readingsInFlight = null
+    })
+    return readingsInFlight
+  }
+
+  return run()
 }
 
 export async function fetchHistoricalTable({
@@ -136,33 +195,55 @@ export async function fetchHistoricalTable({
     })
   }
 
-  const api = resolveApiBase()
-  const params = new URLSearchParams()
-  params.set('page', String(page))
-  params.set('page_size', String(pageSize))
-  params.set('sensor', sensor)
-  if (live) params.set('live', 'true')
-  if (since) params.set('since', since.toISOString())
-  if (dateFrom) params.set('date_from', dateFrom)
-  if (dateTo) params.set('date_to', dateTo)
+  const isDefaultQuery = page === 1
+    && pageSize === 10
+    && sensor === 'all'
+    && !dateFrom
+    && !dateTo
+    && !since
 
-  try {
-    const res = await fetch(`${api}/api/sensors/history/table?${params}`, {
-      headers: getApiAuthHeaders(),
-    })
-    if (res.ok) {
-      const payload = await res.json()
-      return {
-        rows:  Array.isArray(payload.rows) ? payload.rows.map(normalizeTableRow) : [],
-        total: Number(payload.total) || 0,
-        page:  Number(payload.page) || page,
-        pageSize: Number(payload.page_size) || pageSize,
-        hasMore: Boolean(payload.has_more),
+  if (isDefaultQuery && tableInFlight) {
+    return tableInFlight
+  }
+
+  const run = async () => {
+    const api = resolveApiBase()
+    const params = new URLSearchParams()
+    params.set('page', String(page))
+    params.set('page_size', String(pageSize))
+    params.set('sensor', sensor)
+    if (live) params.set('live', 'true')
+    if (since) params.set('since', since.toISOString())
+    if (dateFrom) params.set('date_from', dateFrom)
+    if (dateTo) params.set('date_to', dateTo)
+
+    try {
+      const res = await fetch(`${api}/api/sensors/history/table?${params}`, {
+        headers: getApiAuthHeaders(),
+      })
+      if (res.ok) {
+        const payload = await res.json()
+        return {
+          rows:  Array.isArray(payload.rows) ? payload.rows.map(normalizeTableRow) : [],
+          total: Number(payload.total) || 0,
+          page:  Number(payload.page) || page,
+          pageSize: Number(payload.page_size) || pageSize,
+          hasMore: Boolean(payload.has_more),
+        }
       }
-    }
-  } catch { /* ignore */ }
+    } catch { /* ignore */ }
 
-  return { rows: [], total: 0, page, pageSize, hasMore: false }
+    return { rows: [], total: 0, page, pageSize, hasMore: false }
+  }
+
+  if (isDefaultQuery) {
+    tableInFlight = run().finally(() => {
+      tableInFlight = null
+    })
+    return tableInFlight
+  }
+
+  return run()
 }
 
 /** Datos para exportación PDF (admin). */

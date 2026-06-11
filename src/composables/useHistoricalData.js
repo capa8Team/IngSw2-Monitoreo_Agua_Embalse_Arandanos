@@ -8,18 +8,22 @@ import {
   fetchHistoricalReadings,
   fetchHistoricalTable,
   fetchHistoricalExportRows,
-  fetchActiveDevices,
   fetchIncrementalReadings,
   mergeHistoricalReadings,
   mergeTableRows,
   maxReadingTimestamp,
   getHistoricalDataSourceLabel,
+  readHistoricalCache,
+  writeHistoricalCache,
   IS_SIMULATED_MODE,
   POLL_INTERVAL_MS,
   TABLE_LIVE_PAGE_SIZE,
 } from '../services/historicalDataService.js'
+import { useDeviceStore } from '../stores/deviceStore.js'
 
 export function useHistoricalData() {
+  const deviceStore = useDeviceStore()
+
   const chartSourceReadings = ref([])
   const measurementRows       = ref([])
   const tableTotal            = ref(0)
@@ -30,6 +34,7 @@ export function useHistoricalData() {
   const lastPollTimestamp       = ref(null)
   const lastTableDataTimestamp  = ref(null)
   const initialLoading          = ref(false)
+  const chartsRefreshing        = ref(false)
 
   const tableFilters = reactive({
     sensor:    'all',
@@ -62,6 +67,18 @@ export function useHistoricalData() {
       .sort((a, b) => a.localeCompare(b, 'es'))
   )
 
+  const hasChartData = computed(() =>
+    chartData.ph.values.length > 0
+    || chartData.temperature.values.length > 0
+    || chartData.conductivity.values.length > 0,
+  )
+
+  function isDefaultTableContext() {
+    return tablePage.value === 1
+      && tableFilters.mode === 'all'
+      && tableFilters.sensor === 'all'
+  }
+
   function tableQueryParams() {
     const params = {
       page:     tablePage.value,
@@ -78,8 +95,66 @@ export function useHistoricalData() {
     return params
   }
 
+  function clearHistoricalState() {
+    chartSourceReadings.value = []
+    measurementRows.value = []
+    tableTotal.value = 0
+    tablePage.value = 1
+    registeredDevices.value = []
+    lastPollTimestamp.value = null
+    lastTableDataTimestamp.value = null
+    chartData.ph = { labels: [], values: [] }
+    chartData.temperature = { labels: [], values: [] }
+    chartData.conductivity = { labels: [], values: [] }
+  }
+
+  function hydrateFromCache() {
+    const cached = readHistoricalCache()
+    if (!cached) return false
+
+    if (Array.isArray(cached.chartReadings) && cached.chartReadings.length) {
+      chartSourceReadings.value = cached.chartReadings
+      syncPollTimestampFromCharts()
+    }
+
+    if (isDefaultTableContext() && Array.isArray(cached.tableRows)) {
+      measurementRows.value = cached.tableRows
+      tableTotal.value = Number(cached.tableTotal) || cached.tableRows.length
+      syncTableTimestampFromRows(cached.tableRows)
+    }
+
+    if (Array.isArray(cached.registeredDevices) && cached.registeredDevices.length) {
+      registeredDevices.value = cached.registeredDevices
+    }
+
+    if (chartSourceReadings.value.length) {
+      void loadAllChartData()
+    }
+
+    return Boolean(
+      chartSourceReadings.value.length
+      || measurementRows.value.length
+      || registeredDevices.value.length,
+    )
+  }
+
+  function saveToCache() {
+    writeHistoricalCache({
+      chartReadings: chartSourceReadings.value,
+      tableRows: isDefaultTableContext() ? measurementRows.value : undefined,
+      tableTotal: isDefaultTableContext() ? tableTotal.value : undefined,
+      registeredDevices: registeredDevices.value,
+    })
+  }
+
   async function loadRegisteredDevices() {
-    registeredDevices.value = await fetchActiveDevices()
+    if (!deviceStore.devices.length) {
+      deviceStore.hydrateFromCache()
+    }
+    if (!deviceStore.devices.length) {
+      await deviceStore.fetchDevices()
+    }
+    registeredDevices.value = deviceStore.devices
   }
 
   async function loadChartData(sensorKey, period) {
@@ -146,9 +221,9 @@ export function useHistoricalData() {
     }
   }
 
-  async function loadTableData({ incremental = false } = {}) {
+  async function loadTableData({ incremental = false, silent = false } = {}) {
     const useLive = incremental && isLiveTableContext()
-    if (!useLive) {
+    if (!useLive && !silent) {
       tableLoading.value = true
     }
     try {
@@ -182,16 +257,27 @@ export function useHistoricalData() {
     exportRows.value = await fetchHistoricalExportRows(registeredDevices.value)
   }
 
-  async function refreshHistorical({ full = false } = {}) {
-    initialLoading.value = true
+  async function refreshHistorical({ full = false, reset = false } = {}) {
+    if (reset) {
+      clearHistoricalState()
+    }
+    const hadCachedData = hydrateFromCache()
+    initialLoading.value = !hadCachedData
+    chartsRefreshing.value = hadCachedData
+    if (!hadCachedData) {
+      tableLoading.value = true
+    }
+
     try {
       await loadRegisteredDevices()
       await Promise.all([
         loadChartReadings(full),
-        loadTableData(),
+        loadTableData({ silent: hadCachedData && isDefaultTableContext() }),
       ])
+      saveToCache()
     } finally {
       initialLoading.value = false
+      chartsRefreshing.value = false
     }
   }
 
@@ -219,6 +305,7 @@ export function useHistoricalData() {
           loadChartReadings(false),
           loadTableData({ incremental: true }),
         ])
+        saveToCache()
       } catch (err) {
         console.error(err)
       }
@@ -230,7 +317,8 @@ export function useHistoricalData() {
   }
 
   return {
-    measurementRows, exportRows, tableTotal, tablePage, tableLoading, initialLoading, tableFilters,
+    measurementRows, exportRows, tableTotal, tablePage, tableLoading, initialLoading,
+    chartsRefreshing, hasChartData,
     deviceOptions, registeredDevices,
     dataSourceLabel: getHistoricalDataSourceLabel(),
     pollIntervalMs: POLL_INTERVAL_MS,

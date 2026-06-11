@@ -8,7 +8,11 @@
         <button class="period-btn" :class="{ active: period === 'week' }" @click="$emit('update:period', 'week')">1 semana</button>
       </div>
     </div>
-    <div class="chart-container">
+    <div class="chart-container" :class="{ 'chart-container--loading': loading }">
+      <div v-if="loading" class="chart-loading-overlay" role="status" aria-live="polite" aria-busy="true">
+        <div class="chart-loading-spinner" aria-hidden="true"></div>
+        <span class="chart-loading-text">Cargando gráfico…</span>
+      </div>
       <canvas ref="canvasRef"></canvas>
     </div>
     <div class="measurements">
@@ -29,6 +33,7 @@ const props = defineProps({
   period:    { type: String, required: true },
   chartData: { type: Object, required: true },
   stats:     { type: Object, required: true },
+  loading:   { type: Boolean, default: false },
 })
 
 defineEmits(['update:period'])
@@ -153,6 +158,44 @@ onBeforeUnmount(() => {
   gap: 6px;
   height: fit-content;
   width: 100%;
+}
+
+.chart-container--loading canvas {
+  opacity: 0.25;
+}
+
+.chart-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.82);
+  border-radius: 6px;
+}
+
+.chart-loading-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #e8f5e9;
+  border-top-color: #66bb6a;
+  border-radius: 50%;
+  animation: chart-loading-spin 0.85s linear infinite;
+}
+
+.chart-loading-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: #2e7d32;
+}
+
+@keyframes chart-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .chart-title {

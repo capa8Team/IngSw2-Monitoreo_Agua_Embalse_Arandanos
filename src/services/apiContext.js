@@ -88,3 +88,17 @@ export function getActiveOrganizationName() {
   const match = orgs.find((o) => o.id === activeId)
   return match?.name || orgs[0]?.name || ''
 }
+
+/** Clave de localStorage para límites de sensores, aislada por organización. */
+export function getSensorLimitsStorageKey() {
+  const orgId = getActiveOrganizationId()
+  return orgId ? `sensorLimitsConfig:${orgId}` : 'sensorLimitsConfig'
+}
+
+export const ORGANIZATION_CHANGED_EVENT = 'app:organization-changed'
+
+export function notifyOrganizationChanged(organizationId) {
+  window.dispatchEvent(
+    new CustomEvent(ORGANIZATION_CHANGED_EVENT, { detail: { organizationId } }),
+  )
+}

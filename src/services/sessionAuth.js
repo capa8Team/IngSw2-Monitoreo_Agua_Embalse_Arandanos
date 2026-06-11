@@ -1,5 +1,5 @@
 import { createCorrelationId, appLogger } from '../utils/logger.js'
-import { getApiAuthHeaders } from './apiContext.js'
+import { getApiAuthHeaders, notifyOrganizationChanged } from './apiContext.js'
 import { clearSupabaseSession } from './supabaseSessionBridge.js'
 import { supabase } from './supabaseClient.js'
 
@@ -521,6 +521,7 @@ export async function switchOrganization(organizationId) {
     throw new Error(typeof msg === 'string' ? msg : 'Error al cambiar organización')
   }
   persistSession(body)
+  notifyOrganizationChanged(organizationId)
   return body
 }
 

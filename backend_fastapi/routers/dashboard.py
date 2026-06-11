@@ -46,10 +46,9 @@ def get_dashboard_data(
 ) -> DashboardResponse:
     if arduino_id:
         device = find_device_by_key(arduino_id)
-        if device:
-            ensure_device_in_tenant(device, tenant)
-        elif tenant.organization_id:
-            return _empty_dashboard()
+        if not device:
+            raise HTTPException(status_code=403, detail="Dispositivo fuera de tu organización")
+        ensure_device_in_tenant(device, tenant)
 
     state = update_dashboard_state_from_mongodb(
         arduino_id=arduino_id,

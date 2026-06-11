@@ -85,11 +85,6 @@
         </button>
       </form>
 
-      <div v-if="mode === 'login'" class="demo-info">
-        <p><strong>Nota:</strong></p>
-        <p>Usa el correo y la contraseña definidos al crear la cuenta en Supabase.</p>
-        <p v-if="demoHint">Demo local (sin Supabase): admin@test.com / 123456789</p>
-      </div>
     </div>
   </div>
 </template>
@@ -105,8 +100,10 @@ import {
   persistSession,
   startSessionIdleWatcher,
 } from '../services/sessionAuth.js'
+import { useDeviceStore } from '../stores/deviceStore.js'
 
 const router = useRouter()
+const deviceStore = useDeviceStore()
 
 const mode = ref('login')
 const form = ref({
@@ -120,8 +117,6 @@ const setupForm = ref({
 
 const error = ref('')
 const isLoading = ref(false)
-const demoHint = !import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY
-
 function resetSetupForm() {
   setupForm.value = { password: '', confirmPassword: '' }
 }
@@ -145,7 +140,8 @@ async function finishSession(data) {
   persistSession(data)
   startSessionIdleWatcher(router)
   mode.value = 'login'
-  await router.push('/dashboard')
+  deviceStore.prefetchDevicesForActiveOrg()
+  void router.push('/dashboard')
 }
 
 function backToLogin() {
@@ -166,6 +162,7 @@ const handleLogin = async () => {
   }
 
   isLoading.value = true
+  void import('../components/DeviceDashboard.vue')
   try {
     const data = await apiLogin(email, password)
     if (data?.requiresPasswordSetup) {
@@ -348,24 +345,6 @@ const handleSetPassword = async () => {
 .link-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.demo-info {
-  background: #f8f9fa;
-  border: 1px solid #e8e8e8;
-  padding: 12px;
-  border-radius: 6px;
-  margin-top: 20px;
-  font-size: 12px;
-  color: #888888;
-}
-
-.demo-info p {
-  margin: 4px 0;
-}
-
-.demo-info strong {
-  color: #333333;
 }
 
 @media (max-width: 480px) {

@@ -81,7 +81,12 @@
         @devices-changed="$emit('devices-changed')"
       />
 
-      <div class="devices-grid" :class="`view-${viewMode}`">
+      <div v-if="isLoadingDevices" class="loading-state" role="status" aria-live="polite" aria-busy="true">
+        <div class="devices-loading-spinner" aria-hidden="true"></div>
+        <p class="loading-text">Cargando dispositivos…</p>
+      </div>
+
+      <div v-else class="devices-grid" :class="`view-${viewMode}`">
         <DeviceCard
           v-for="device in devicesData"
           :key="device.id"
@@ -94,7 +99,7 @@
         />
       </div>
 
-      <div v-if="devicesData.length === 0" class="empty-state">
+      <div v-if="!isLoadingDevices && devicesData.length === 0" class="empty-state">
         <div class="empty-icon">
           <svg viewBox="0 0 24 24" width="64" height="64" fill="currentColor">
             <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5-4h-2v2h2v-2zm0-4h-2v2h2V7z"/>
@@ -132,6 +137,10 @@ const props = defineProps({
     default: false
   }
 })
+
+const isLoadingDevices = computed(
+  () => deviceStore.loading && props.devicesData.length === 0,
+)
 
 const selectDevice = (device) => {
   selectedDeviceId.value = device.id
@@ -333,6 +342,38 @@ const emit = defineEmits([
 
 .devices-grid.view-list {
   grid-template-columns: 1fr;
+}
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 40px;
+  text-align: center;
+  color: #2e7d32;
+}
+
+.devices-loading-spinner {
+  width: 44px;
+  height: 44px;
+  border: 3px solid #e8f5e9;
+  border-top-color: #66bb6a;
+  border-radius: 50%;
+  animation: devices-loading-spin 0.85s linear infinite;
+  margin-bottom: 16px;
+}
+
+.loading-text {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+@keyframes devices-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .empty-state {
@@ -552,6 +593,15 @@ html[data-theme='dark'] .logout-btn {
 
 html[data-theme='dark'] .logout-btn:hover {
   background: #3f1d1d;
+}
+
+html[data-theme='dark'] .loading-state {
+  color: #81c784;
+}
+
+html[data-theme='dark'] .devices-loading-spinner {
+  border-color: #1b3d1f;
+  border-top-color: #66bb6a;
 }
 
 html[data-theme='dark'] .empty-state {

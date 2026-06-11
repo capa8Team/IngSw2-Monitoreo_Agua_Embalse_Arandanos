@@ -1,6 +1,37 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { getApiAuthHeaders } from '../services/apiContext.js'
+import { getActiveOrganizationId, getApiAuthHeaders } from '../services/apiContext.js'
+
+const DEVICES_CACHE_PREFIX = 'devicesCache:'
+
+function devicesCacheKey(orgId) {
+  return orgId ? `${DEVICES_CACHE_PREFIX}${orgId}` : ''
+}
+
+function readDevicesCache(orgId) {
+  const key = devicesCacheKey(orgId)
+  if (!key) return null
+  try {
+    let raw = localStorage.getItem(key)
+    if (!raw) raw = sessionStorage.getItem(key)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function writeDevicesCache(orgId, list) {
+  const key = devicesCacheKey(orgId)
+  if (!key || !Array.isArray(list)) return
+  try {
+    localStorage.setItem(key, JSON.stringify(list))
+    sessionStorage.removeItem(key)
+  } catch {
+    // almacenamiento lleno o no disponible
+  }
+}
 
 export const useDeviceStore = defineStore('device', () => {
   // State
@@ -9,6 +40,7 @@ export const useDeviceStore = defineStore('device', () => {
   const error = ref(null)
   const selectedDevice = ref(null)
   const availableMicrocontrollers = ref([])
+  let fetchInFlight = null
 
   // Computed
   const activeDevices = computed(() => 
@@ -23,32 +55,65 @@ export const useDeviceStore = defineStore('device', () => {
 
   const activeDeviceCount = computed(() => activeDevices.value.length)
 
+  const hydrateFromCache = (orgId = getActiveOrganizationId()) => {
+    const cached = readDevicesCache(orgId)
+    if (cached?.length) {
+      devices.value = cached
+      return true
+    }
+    return false
+  }
+
+  const prefetchDevicesForActiveOrg = (apiUrl = '') => {
+    const orgId = getActiveOrganizationId()
+    if (!devices.value.length) {
+      hydrateFromCache(orgId)
+    }
+    void fetchDevices(apiUrl)
+  }
+
   // Actions
   const fetchDevices = async (apiUrl = '') => {
-    loading.value = true
-    error.value = null
-    
-    try {
-      const url = apiUrl || `${import.meta.env.VITE_API_URL || ''}/api/devices`
-      const response = await fetch(url, { headers: getApiAuthHeaders() })
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-      }
-      
-      const data = await response.json()
-      devices.value = Array.isArray(data)
-        ? data.filter((d) => d.active !== false)
-        : []
-      
-      return devices.value
-    } catch (err) {
-      error.value = err.message
-      console.error('[DeviceStore] Error fetching devices:', err)
-      return []
-    } finally {
-      loading.value = false
+    if (fetchInFlight) return fetchInFlight
+
+    const orgId = getActiveOrganizationId()
+    if (!devices.value.length) {
+      hydrateFromCache(orgId)
     }
+
+    fetchInFlight = (async () => {
+      const hadCachedDevices = devices.value.length > 0
+      if (!hadCachedDevices) {
+        loading.value = true
+      }
+      error.value = null
+
+      try {
+        const url = apiUrl || `${import.meta.env.VITE_API_URL || ''}/api/devices`
+        const response = await fetch(url, { headers: getApiAuthHeaders() })
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
+
+        const data = await response.json()
+        devices.value = Array.isArray(data)
+          ? data.filter((d) => d.active !== false)
+          : []
+
+        writeDevicesCache(orgId, devices.value)
+        return devices.value
+      } catch (err) {
+        error.value = err.message
+        console.error('[DeviceStore] Error fetching devices:', err)
+        return devices.value
+      } finally {
+        loading.value = false
+        fetchInFlight = null
+      }
+    })()
+
+    return fetchInFlight
   }
 
   const createDevice = async (deviceData) => {
@@ -70,7 +135,8 @@ export const useDeviceStore = defineStore('device', () => {
       
       const newDevice = await response.json()
       devices.value.push(newDevice)
-      
+      writeDevicesCache(getActiveOrganizationId(), devices.value)
+
       return newDevice
     } catch (err) {
       error.value = err.message
@@ -102,7 +168,8 @@ export const useDeviceStore = defineStore('device', () => {
       if (index !== -1) {
         devices.value[index] = updated
       }
-      
+      writeDevicesCache(getActiveOrganizationId(), devices.value)
+
       return updated
     } catch (err) {
       error.value = err.message
@@ -129,7 +196,8 @@ export const useDeviceStore = defineStore('device', () => {
       }
       
       devices.value = devices.value.filter(d => d.id !== deviceId)
-      
+      writeDevicesCache(getActiveOrganizationId(), devices.value)
+
       if (selectedDevice.value?.id === deviceId) {
         selectedDevice.value = null
       }
@@ -170,7 +238,8 @@ export const useDeviceStore = defineStore('device', () => {
       } else {
         devices.value.push(detected)
       }
-      
+      writeDevicesCache(getActiveOrganizationId(), devices.value)
+
       return detected
     } catch (err) {
       error.value = err.message
@@ -243,6 +312,8 @@ export const useDeviceStore = defineStore('device', () => {
     activeDeviceCount,
 
     // Actions
+    hydrateFromCache,
+    prefetchDevicesForActiveOrg,
     fetchDevices,
     createDevice,
     updateDevice,
