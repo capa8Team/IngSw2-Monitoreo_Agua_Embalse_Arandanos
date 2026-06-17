@@ -21,15 +21,17 @@ const INCREMENTAL_LIMIT = 100
 const TABLE_LIVE_PAGE_SIZE = 10
 const HISTORICAL_CACHE_PREFIX = 'historicalCache:'
 
-let readingsInFlight = null
 let tableInFlight = null
+const readingsInFlightByKey = new Map()
 
-function historicalCacheKey(orgId = getActiveOrganizationId()) {
-  return orgId ? `${HISTORICAL_CACHE_PREFIX}${orgId}` : ''
+function historicalCacheKey(orgId = getActiveOrganizationId(), arduinoId = null) {
+  if (!orgId) return ''
+  const scope = arduinoId ? `:${String(arduinoId).trim()}` : ''
+  return `${HISTORICAL_CACHE_PREFIX}${orgId}${scope}`
 }
 
-export function readHistoricalCache(orgId = getActiveOrganizationId()) {
-  const key = historicalCacheKey(orgId)
+export function readHistoricalCache(orgId = getActiveOrganizationId(), arduinoId = null) {
+  const key = historicalCacheKey(orgId, arduinoId)
   if (!key) return null
   try {
     const raw = sessionStorage.getItem(key)
@@ -41,8 +43,8 @@ export function readHistoricalCache(orgId = getActiveOrganizationId()) {
   }
 }
 
-export function writeHistoricalCache(payload, orgId = getActiveOrganizationId()) {
-  const key = historicalCacheKey(orgId)
+export function writeHistoricalCache(payload, orgId = getActiveOrganizationId(), arduinoId = null) {
+  const key = historicalCacheKey(orgId, arduinoId)
   if (!key || !payload) return
   try {
     sessionStorage.setItem(key, JSON.stringify({
@@ -132,13 +134,21 @@ export async function fetchHistoricalReadings({
   until,
   days = CHART_LOOKBACK_DAYS,
   limit = CHART_FETCH_LIMIT,
+  arduinoId = null,
 } = {}) {
   if (IS_SIMULATED_MODE) {
-    return buildSimulatedHistoricalReadings({ since, until, days, limit })
+    const records = buildSimulatedHistoricalReadings({ since, until, days, limit })
+    if (!arduinoId) return records
+    return records.map((record) => ({
+      ...record,
+      device: String(arduinoId).trim() || record.device,
+    }))
   }
 
-  if (!since && !until && readingsInFlight) {
-    return readingsInFlight
+  const inFlightKey = arduinoId ? `device:${String(arduinoId).trim()}` : 'global'
+  if (!since && !until) {
+    const existing = readingsInFlightByKey.get(inFlightKey)
+    if (existing) return existing
   }
 
   const run = async () => {
@@ -148,6 +158,7 @@ export async function fetchHistoricalReadings({
     if (since) params.set('since', since.toISOString())
     if (until) params.set('until', until.toISOString())
     if (!since && !until) params.set('days', String(days))
+    if (arduinoId) params.set('arduino_id', String(arduinoId).trim())
 
     try {
       const res = await fetch(`${api}/api/sensors/history/range?${params}`, {
@@ -165,10 +176,11 @@ export async function fetchHistoricalReadings({
   }
 
   if (!since && !until) {
-    readingsInFlight = run().finally(() => {
-      readingsInFlight = null
+    const promise = run().finally(() => {
+      readingsInFlightByKey.delete(inFlightKey)
     })
-    return readingsInFlight
+    readingsInFlightByKey.set(inFlightKey, promise)
+    return promise
   }
 
   return run()
@@ -304,18 +316,22 @@ export function mergeHistoricalReadings(existing, incoming, registeredDevices = 
   return readingsForCharts(trimmed, registeredDevices)
 }
 
-export async function fetchIncrementalReadings(since, registeredDevices = []) {
+export async function fetchIncrementalReadings(since, registeredDevices = [], arduinoId = null) {
   if (!since) return []
 
   if (IS_SIMULATED_MODE) {
     const incoming = buildSimulatedIncrementalReadings(since, INCREMENTAL_LIMIT)
-    return readingsForCharts(incoming, registeredDevices)
+    const scoped = arduinoId
+      ? incoming.map((record) => ({ ...record, device: String(arduinoId).trim() || record.device }))
+      : incoming
+    return readingsForCharts(scoped, registeredDevices)
   }
 
   try {
     const incoming = await fetchHistoricalReadings({
       since,
       limit: INCREMENTAL_LIMIT,
+      arduinoId,
     })
     return readingsForCharts(incoming, registeredDevices)
   } catch {

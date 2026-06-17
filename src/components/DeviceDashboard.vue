@@ -6,13 +6,20 @@
       :devices-data="devices"
       :is-admin="isAdmin"
       @select-device="selectDevice"
-      @open-history="openHistory"
+      @open-pdf-export="openPdfModal"
       @open-user-management="openUserManagementView"
       @open-account-activity="openAccountActivityView"
       @logout="handleLogout"
       @add-device="openAddDeviceFromDeviceList"
       @devices-changed="onDevicesChanged"
       @organization-changed="onOrganizationChanged"
+    />
+
+    <PdfExportModal
+      v-if="showPdfModal"
+      :measurementRows="exportRows"
+      :deviceOptions="deviceOptions"
+      @close="showPdfModal = false"
     />
   </div>
 
@@ -43,7 +50,6 @@
           <span v-else-if="selectedDevice.dataSource === 'simulated'">⚙️ Datos Simulados</span>
           <span v-else>❓ Fuente Desconocida</span>
         </div>
-        <button class="history-btn" type="button" @click="openHistory" title="Ver datos históricos">Históricos</button>
         <button class="logout-btn" type="button" @click="handleLogout">Cerrar sesión</button>
       </div>
     </header>
@@ -123,6 +129,39 @@
           @city-updated="onDevicesChanged"
         />
       </div>
+
+      <section class="historical-charts-section">
+        <div class="historical-charts-header">
+          <h2 class="section-title">Historial de sensores</h2>
+          <span class="source-badge" :class="chartsSimulatedMode ? 'source-simulated' : 'source-real'">
+            {{ chartsSimulatedMode ? '⚙️ Datos simulados' : '📡 Datos en vivo' }}
+          </span>
+        </div>
+        <p v-if="chartsRefreshing" class="history-refresh-hint">Actualizando datos históricos…</p>
+        <div class="historical-charts-grid">
+          <SensorChart
+            sensorKey="ph"
+            v-model:period="phPeriod"
+            :chartData="deviceChartData.ph"
+            :stats="deviceChartStats.ph"
+            :loading="chartsInitialLoading && !hasDeviceChartData"
+          />
+          <SensorChart
+            sensorKey="temperature"
+            v-model:period="tempPeriod"
+            :chartData="deviceChartData.temperature"
+            :stats="deviceChartStats.temperature"
+            :loading="chartsInitialLoading && !hasDeviceChartData"
+          />
+          <SensorChart
+            sensorKey="conductivity"
+            v-model:period="condPeriod"
+            :chartData="deviceChartData.conductivity"
+            :stats="deviceChartStats.conductivity"
+            :loading="chartsInitialLoading && !hasDeviceChartData"
+          />
+        </div>
+      </section>
 
       <section class="alerts-section">
         <div class="alerts-header">
@@ -574,114 +613,6 @@
       </section>
     </main>
   </div>
-
-  <div v-else class="history-view">
-    <header class="dashboard-header">
-      <div class="header-content">
-        <ThemeToggleButton />
-        <button class="back-btn" @click="goBack" title="Volver a dispositivos">
-          <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
-            <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
-          </svg>
-        </button>
-        <div>
-          <h1 class="header-title">Registro Histórico</h1>
-          <p class="header-subtitle">Todas las mediciones guardadas por dispositivo y fecha</p>
-        </div>
-      </div>
-      <button class="pdf-btn" @click="downloadHistoryPdf">Descargar PDF</button>
-    </header>
-
-    <main class="dashboard-content">
-      <section class="filters-section">
-        <h2 class="section-title">Opciones de filtrado</h2>
-        <div class="filters-grid">
-          <label class="filter-item">
-            <span>Dispositivo</span>
-            <select v-model="historyFilters.deviceId">
-              <option value="all">Todos</option>
-              <option v-for="device in devices" :key="device.id" :value="String(device.id)">
-                {{ device.name }}
-              </option>
-            </select>
-          </label>
-          <label class="filter-item">
-            <span>Fecha</span>
-            <select v-model="historyFilters.date">
-              <option value="all">Todas</option>
-              <option v-for="dateValue in availableDates" :key="dateValue" :value="dateValue">
-                {{ dateValue }}
-              </option>
-            </select>
-          </label>
-        </div>
-      </section>
-
-      <section class="charts-section">
-        <h2 class="section-title">Gráficos de tendencias</h2>
-        <div class="chart-grid">
-          <div class="chart-card">
-            <h3>pH</h3>
-            <svg viewBox="0 0 320 120" class="line-chart">
-              <polyline :points="buildLineChartPoints(historyFilteredRows, 'ph', 5, 9)" />
-            </svg>
-          </div>
-          <div class="chart-card">
-            <h3>Temperatura</h3>
-            <svg viewBox="0 0 320 120" class="line-chart">
-              <polyline :points="buildLineChartPoints(historyFilteredRows, 'temperature', 15, 35)" />
-            </svg>
-          </div>
-          <div class="chart-card">
-            <h3>Conductividad</h3>
-            <svg viewBox="0 0 320 120" class="line-chart">
-              <polyline :points="buildLineChartPoints(historyFilteredRows, 'conductivity', 200, 1800)" />
-            </svg>
-          </div>
-        </div>
-      </section>
-
-      <section class="alerts-section">
-        <div class="alerts-header">
-          <h2 class="section-title">Mediciones filtradas</h2>
-          <span class="alerts-count">{{ historyFilteredRows.length }} filas</span>
-        </div>
-        <div class="table-wrap">
-          <table class="alerts-table">
-            <thead>
-              <tr>
-                <th>Dispositivo</th>
-                <th>pH</th>
-                <th>Temperatura</th>
-                <th>Conductividad</th>
-                <th>Estado de carga</th>
-                <th>Fecha</th>
-                <th>Hora</th>
-                <th>Telegram</th>
-                <th>Email</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in historyFilteredRows" :key="row.id">
-                <td>{{ row.deviceName }}</td>
-                <td>{{ row.ph }}</td>
-                <td>{{ row.temperature }}</td>
-                <td>{{ row.conductivity }}</td>
-                <td>{{ row.battery }}%</td>
-                <td>{{ row.date }}</td>
-                <td>{{ row.time }}</td>
-                <td>{{ row.telegramStatus }}</td>
-                <td>{{ row.emailStatus }}</td>
-              </tr>
-              <tr v-if="historyFilteredRows.length === 0">
-                <td colspan="9" class="empty-cell">No hay datos para los filtros seleccionados.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </main>
-  </div>
 </template>
 
 <script setup>
@@ -693,6 +624,10 @@ import ThemeToggleButton from './ThemeToggleButton.vue'
 import SensorCard from './SensorCard.vue'
 import BatteryIndicator from './BatteryIndicator.vue'
 import WeatherCard from './WeatherCard.vue'
+import SensorChart from './historical/SensorChart.vue'
+import PdfExportModal from './historical/PdfExportModal.vue'
+import { useDeviceHistoricalCharts } from '../composables/useDeviceHistoricalCharts.js'
+import { useHistoricalExport } from '../composables/useHistoricalExport.js'
 import { useDeviceStore } from '../stores/deviceStore'
 import {
   mapApiDeviceToCard,
@@ -937,6 +872,7 @@ const onOrganizationChanged = async () => {
   existingUsers.value = []
   accountsActivity.value = []
   stopUsersAutoRefresh()
+  stopChartsPolling()
   deviceStore.reset()
   loadSensorLimitsFromStorage()
   await onDevicesChanged()
@@ -964,11 +900,40 @@ const sensors = computed(() => ({
 }))
 
 const historyRecords = ref([])
-const historyFilters = ref({
-  deviceId: 'all',
-  date: 'all'
-})
 const lastProcessedAlertTimestamp = ref(0)
+const showPdfModal = ref(false)
+
+const selectedDeviceArduinoId = computed(() => {
+  const device = selectedDevice.value
+  if (!device?.id) return null
+  return device.telemetryQueryKey || device.telemetry_key || device.arduino_id || null
+})
+
+const {
+  phPeriod,
+  tempPeriod,
+  condPeriod,
+  chartData: deviceChartData,
+  chartStats: deviceChartStats,
+  initialLoading: chartsInitialLoading,
+  chartsRefreshing,
+  hasChartData: hasDeviceChartData,
+  isSimulatedMode: chartsSimulatedMode,
+  refreshCharts,
+  startPolling: startChartsPolling,
+  stopPolling: stopChartsPolling,
+} = useDeviceHistoricalCharts(selectedDeviceArduinoId, selectedDevice)
+
+const {
+  exportRows,
+  deviceOptions,
+  prepareExportRows,
+} = useHistoricalExport()
+
+async function openPdfModal() {
+  await prepareExportRows()
+  showPdfModal.value = true
+}
 
 const getStatus = (value, min, max) => {
   const percentage = ((value - min) / (max - min)) * 100
@@ -1089,27 +1054,6 @@ const createRecord = ({ ph, temperature, conductivity, timestamp }) => {
   }
 }
 
-const availableDates = computed(() => {
-  const uniqueDates = [...new Set(historyRecords.value.map((record) => record.date))]
-  return uniqueDates.sort((a, b) => {
-    const [da, ma, ya] = a.split('-').map(Number)
-    const [db, mb, yb] = b.split('-').map(Number)
-    return new Date(yb, mb - 1, db) - new Date(ya, ma - 1, da)
-  })
-})
-
-const historyFilteredRows = computed(() => {
-  return historyRecords.value
-    .filter((record) => {
-      const matchesDevice =
-        historyFilters.value.deviceId === 'all' ||
-        String(record.deviceId) === String(historyFilters.value.deviceId)
-      const matchesDate = historyFilters.value.date === 'all' || record.date === historyFilters.value.date
-      return matchesDevice && matchesDate
-    })
-    .sort((a, b) => b.timestamp - a.timestamp)
-})
-
 const todayString = computed(() => formatDate(new Date()))
 const todayAlerts = computed(() => {
   return historyRecords.value
@@ -1125,95 +1069,6 @@ const todayAlerts = computed(() => {
 const visibleAlerts = computed(() => {
   return showAllTodayAlerts.value ? todayAlerts.value : todayAlerts.value.slice(0, ALERT_TABLE_LIMIT)
 })
-
-const buildLineChartPoints = (rows, key, min, max) => {
-  const chartRows = rows.slice(0, 20).reverse()
-  if (chartRows.length < 2) return '0,100 320,100'
-  return chartRows.map((row, index) => {
-    const x = (index / (chartRows.length - 1)) * 320
-    const value = Number(row[key])
-    const normalized = (value - min) / (max - min)
-    const y = 110 - Math.max(0, Math.min(1, normalized)) * 100
-    return `${x.toFixed(2)},${y.toFixed(2)}`
-  }).join(' ')
-}
-
-const escapeHtml = (value) => {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;')
-}
-
-const downloadHistoryPdf = () => {
-  const groupedByDevice = historyFilteredRows.value.reduce((acc, row) => {
-    if (!acc[row.deviceName]) acc[row.deviceName] = []
-    acc[row.deviceName].push(row)
-    return acc
-  }, {})
-
-  const rowsHtml = Object.entries(groupedByDevice).map(([deviceName, rows]) => {
-    const tableRows = rows.map((row) => {
-      return `<tr>
-        <td>${escapeHtml(row.ph)}</td>
-        <td>${escapeHtml(row.temperature)}</td>
-        <td>${escapeHtml(row.conductivity)}</td>
-        <td>${escapeHtml(row.battery)}%</td>
-        <td>${escapeHtml(row.date)}</td>
-        <td>${escapeHtml(row.time)}</td>
-        <td>${escapeHtml(row.telegramStatus)}</td>
-        <td>${escapeHtml(row.emailStatus)}</td>
-      </tr>`
-    }).join('')
-    return `
-      <h2>${escapeHtml(deviceName)}</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>pH</th>
-            <th>Temperatura</th>
-            <th>Conductividad</th>
-            <th>Estado de carga</th>
-            <th>Fecha</th>
-            <th>Hora</th>
-            <th>Telegram</th>
-            <th>Email</th>
-          </tr>
-        </thead>
-        <tbody>${tableRows}</tbody>
-      </table>
-    `
-  }).join('')
-
-  const win = window.open('', '_blank')
-  if (!win) return
-  win.document.write(`
-    <html>
-      <head>
-        <title>Registro Historico</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 20px; color: #1f2937; }
-          h1 { margin-bottom: 8px; }
-          h2 { margin-top: 28px; margin-bottom: 8px; color: #2e7d32; }
-          p { margin-top: 0; color: #4b5563; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-          th, td { border: 1px solid #d1d5db; padding: 6px 8px; font-size: 12px; text-align: left; }
-          th { background: #f3f4f6; }
-        </style>
-      </head>
-      <body>
-        <h1>Registro Historico de Mediciones</h1>
-        <p>Filtro dispositivo: ${escapeHtml(historyFilters.value.deviceId === 'all' ? 'Todos' : selectedDevice.value.name)} | Filtro fecha: ${escapeHtml(historyFilters.value.date === 'all' ? 'Todas' : historyFilters.value.date)}</p>
-        ${rowsHtml || '<p>No hay datos para exportar.</p>'}
-      </body>
-    </html>
-  `)
-  win.document.close()
-  win.focus()
-  win.print()
-}
 
 const formatLastSync = (value) => {
   if (!value) return 'Sin datos del Arduino'
@@ -1322,14 +1177,6 @@ const selectDevice = (device) => {
   selectedDeviceId.value = device.id
   currentView.value = 'dashboard'
   showAllTodayAlerts.value = false
-}
-
-const openHistory = () => {
-  void import('../services/historicalDataService.js').then(({ prefetchHistoricalData }) => {
-    prefetchHistoricalData()
-    deviceStore.prefetchDevicesForActiveOrg()
-  })
-  router.push('/historical')
 }
 
 const openAlertConfigView = () => {
@@ -1640,9 +1487,15 @@ watch(currentView, (view) => {
 watch(
   () => ({ view: currentView.value, deviceId: selectedDeviceId.value }),
   async (current, previous) => {
-    if (current.view !== 'dashboard' || !current.deviceId) return
+    if (current.view !== 'dashboard' || !current.deviceId) {
+      stopChartsPolling()
+      return
+    }
     if (previous?.view === current.view && previous?.deviceId === current.deviceId) return
     await refreshDashboardView()
+    stopChartsPolling()
+    await refreshCharts({ full: true, reset: true })
+    startChartsPolling()
   },
   { flush: 'post' },
 )
@@ -1675,6 +1528,7 @@ onMounted(async () => {
 onUnmounted(() => {
   stopSensorUpdates()
   stopUsersAutoRefresh()
+  stopChartsPolling()
 })
 </script>
 
@@ -2428,7 +2282,8 @@ onUnmounted(() => {
 
 .alerts-section,
 .filters-section,
-.charts-section {
+.charts-section,
+.historical-charts-section {
   margin-top: 28px;
   background: #ffffff;
   border-radius: 12px;
@@ -2445,6 +2300,61 @@ onUnmounted(() => {
 .weather-section {
   margin-bottom: 40px;
   margin-top: 40px;
+}
+
+.historical-charts-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.historical-charts-header .section-title {
+  margin-bottom: 0;
+}
+
+.historical-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(280px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.history-refresh-hint {
+  margin: 0 0 12px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: #e8f5e9;
+  color: #2e7d32;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.source-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.source-real {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.source-simulated {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+@media (max-width: 1100px) {
+  .historical-charts-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .alerts-section:has(.see-more-btn:disabled) .table-wrap,
@@ -2917,10 +2827,16 @@ html[data-theme='dark'] .info-card-value.user-role {
 
 html[data-theme='dark'] .alerts-section,
 html[data-theme='dark'] .filters-section,
-html[data-theme='dark'] .charts-section {
+html[data-theme='dark'] .charts-section,
+html[data-theme='dark'] .historical-charts-section {
   background: #262a36;
   border-color: #3d4254;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+}
+
+html[data-theme='dark'] .history-refresh-hint {
+  background: rgba(22, 101, 52, 0.35);
+  color: #bbf7d0;
 }
 
 html[data-theme='dark'] .alerts-count {

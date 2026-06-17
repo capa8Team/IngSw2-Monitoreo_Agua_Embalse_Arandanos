@@ -54,11 +54,12 @@
         </button>
 
         <button
-          class="history-btn"
-          @click="$emit('open-history')"
-          title="Abrir registro histórico"
+          v-if="isAdmin"
+          class="pdf-export-btn"
+          @click="$emit('open-pdf-export')"
+          title="Descargar reporte PDF"
         >
-          Registro Histórico
+          Descargar PDF
         </button>
 
         <button
@@ -170,7 +171,7 @@ const handleDeleteDevice = async (device) => {
 
 const emit = defineEmits([
   'select-device',
-  'open-history',
+  'open-pdf-export',
   'open-user-management',
   'open-account-activity',
   'logout',
@@ -250,20 +251,22 @@ const emit = defineEmits([
   color: #764ba2;
 }
 
-.history-btn {
-  border: 1px solid #66bb6a;
-  background: #ffffff;
-  color: #2e7d32;
+.pdf-export-btn {
+  border: none;
+  background: #66bb6a;
+  color: #ffffff;
   border-radius: 6px;
-  padding: 0 14px;
+  padding: 0 16px;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(102, 187, 106, 0.25);
 }
 
-.history-btn:hover {
-  background: #e8f5e9;
+.pdf-export-btn:hover {
+  background: #558a5a;
+  transform: translateY(-1px);
 }
 
 .logout-btn {
@@ -438,7 +441,7 @@ const emit = defineEmits([
     justify-content: center;
   }
 
-  .history-btn {
+  .pdf-export-btn {
     height: 36px;
   }
 
@@ -575,14 +578,13 @@ html[data-theme='dark'] .admin-btn:hover {
   color: #ffedd5;
 }
 
-html[data-theme='dark'] .history-btn {
-  background: #262a36;
-  border-color: #4ade80;
-  color: #bbf7d0;
+html[data-theme='dark'] .pdf-export-btn {
+  background: #4ade80;
+  color: #052e16;
 }
 
-html[data-theme='dark'] .history-btn:hover {
-  background: #1e3a2a;
+html[data-theme='dark'] .pdf-export-btn:hover {
+  background: #86efac;
 }
 
 html[data-theme='dark'] .logout-btn {

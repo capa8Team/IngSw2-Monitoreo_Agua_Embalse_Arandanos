@@ -929,6 +929,24 @@ html[data-theme='dark'] .history-header .back-btn:hover {
   border-color: #66bb6a;
 }
 
+html[data-theme='dark'] .historical-charts-section .chart-wrapper {
+  background: #2e3240;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  border: 1px solid #3d4254;
+}
+
+html[data-theme='dark'] .historical-charts-section .chart-title h3 {
+  color: #f1f5f9;
+}
+
+html[data-theme='dark'] .historical-charts-section .chart-loading-overlay {
+  background: rgba(38, 42, 54, 0.88);
+}
+
+html[data-theme='dark'] .historical-charts-section .chart-loading-text {
+  color: #bbf7d0;
+}
+
 html[data-theme='dark'] .historical-view .chart-wrapper {
   background: #262a36;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);

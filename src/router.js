@@ -9,7 +9,6 @@ import { syncOrganizationContextFromAccessToken } from './services/apiContext.js
 // Importación lazy de vistas
 const Login = () => import('./views/Login.vue')
 const DeviceDashboard = () => import('./components/DeviceDashboard.vue')
-const HistoricalData = () => import('./views/HistoricalData.vue')
 
 const routes = [
   {
@@ -29,18 +28,6 @@ const routes = [
     name: 'Dashboard',
     component: DeviceDashboard,
     meta: { title: 'Dashboard' },
-  },
-
-  // Datos históricos - Accesible para empleado y administrador
-  {
-    path: '/historical',
-    name: 'HistoricalData',
-    component: HistoricalData,
-    meta: { 
-      title: 'Datos Históricos',
-      requiresAuth: true,
-      roles: ['empleado', 'administrador']
-    },
   },
 
   // Catch-all para rutas no encontradas

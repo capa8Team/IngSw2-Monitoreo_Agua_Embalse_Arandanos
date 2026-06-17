@@ -149,10 +149,11 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .chart-wrapper {
-  background: white;
+  background: #f8f9fa;
   border-radius: 8px;
   padding: 10px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  border: 1px solid #e8ecf1;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -306,5 +307,35 @@ onBeforeUnmount(() => {
   .chart-container {
     height: 170px;
   }
+}
+</style>
+
+<style>
+html[data-theme='dark'] .chart-wrapper {
+  background: #2e3240;
+  border-color: #3d4254;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+html[data-theme='dark'] .chart-title h3 {
+  color: #f1f5f9;
+}
+
+html[data-theme='dark'] .chart-loading-overlay {
+  background: rgba(38, 42, 54, 0.88);
+}
+
+html[data-theme='dark'] .chart-loading-text {
+  color: #bbf7d0;
+}
+
+html[data-theme='dark'] .chart-loading-spinner {
+  border-color: #3d4254;
+  border-top-color: #4ade80;
+}
+
+html[data-theme='dark'] .measurements {
+  color: #94a3b8;
+  border-top-color: #3d4254;
 }
 </style>
