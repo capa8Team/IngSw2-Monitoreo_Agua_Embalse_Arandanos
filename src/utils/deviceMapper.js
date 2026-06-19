@@ -65,6 +65,7 @@ export function buildDefaultSimulatedCard() {
     model: 'ESP8266 (WiFi) — modo simulado',
     device_type: 'ESP8266',
     location: '',
+    city: '',
     arduino_id: 'sim-1',
     topic: null,
     status: 'connected',

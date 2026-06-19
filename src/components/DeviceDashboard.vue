@@ -127,7 +127,8 @@
           v-if="selectedDevice.id"
           :device-id="selectedDevice.id"
           :city="selectedDevice.city || selectedDevice.location || ''"
-          @city-updated="onDevicesChanged"
+          :is-simulated="isSimulatedDeviceId(selectedDevice.id)"
+          @city-updated="onWeatherCityUpdated"
         />
       </div>
 
@@ -644,7 +645,6 @@ import { useDeviceGroupStore } from '../stores/deviceGroupStore'
 import {
   mapApiDeviceToCard,
   mergeCardWithTelemetry,
-  buildDefaultSimulatedCard,
   applyDashboardToTelemetry,
 } from '../utils/deviceMapper.js'
 import { checkAndSendAlerts } from '../services/AlertService.js'
@@ -670,6 +670,13 @@ import {
   getSensorLimitsStorageKey,
 } from '../services/apiContext.js'
 import { resolveGroupAssignment, buildDeviceUpdatePayload } from '../utils/deviceGroupAssignment.js'
+import {
+  getSimulatedDeviceCard,
+  isSimulatedDeviceId,
+  saveSimulatedDeviceFromForm,
+  simulatedDeviceVersion,
+  SIMULATED_DEVICE_ID,
+} from '../utils/simulatedDeviceStorage.js'
 
 const router = useRouter()
 const activeOrganizationName = computed(() => getActiveOrganizationName())
@@ -836,14 +843,31 @@ const displayedUsers = computed(() => {
 })
 
 const devices = computed(() => {
+  void simulatedDeviceVersion.value
   const dataSource = IS_SIMULATED_MODE ? 'simulated' : 'real'
   const apiList = deviceStore.devices
 
-  if (!apiList.length) {
-    if (IS_SIMULATED_MODE && !deviceStore.loading) {
-      const card = buildDefaultSimulatedCard()
-      return [mergeCardWithTelemetry(card, telemetryByDeviceId.value[card.id])]
+  if (IS_SIMULATED_MODE) {
+    const simCard = mergeCardWithTelemetry(
+      getSimulatedDeviceCard(),
+      telemetryByDeviceId.value[SIMULATED_DEVICE_ID] ?? telemetryByDeviceId.value['sim-default'],
+    )
+    if (!apiList.length) {
+      return [simCard]
     }
+    const realCards = apiList
+      .filter((apiDevice) => apiDevice.active !== false)
+      .map((apiDevice) => {
+        const card = mapApiDeviceToCard(apiDevice, {
+          dataSource,
+          groups: deviceGroupStore.groups,
+        })
+        return mergeCardWithTelemetry(card, telemetryByDeviceId.value[card.id])
+      })
+    return [simCard, ...realCards]
+  }
+
+  if (!apiList.length) {
     return []
   }
 
@@ -859,6 +883,11 @@ const devices = computed(() => {
 })
 
 const loadDevices = async () => {
+  if (IS_SIMULATED_MODE) {
+    void deviceGroupStore.fetchGroups()
+    void deviceStore.fetchDevices(`${API_BASE_URL}/api/devices`)
+    return
+  }
   await Promise.all([
     deviceStore.fetchDevices(`${API_BASE_URL}/api/devices`),
     deviceGroupStore.fetchGroups(),
@@ -870,6 +899,13 @@ const onDevicesChanged = async () => {
   if (devices.value.length > 0 && !devices.value.some((d) => d.id === selectedDeviceId.value)) {
     selectedDeviceId.value = devices.value[0].id
   }
+}
+
+const onWeatherCityUpdated = () => {
+  if (isSimulatedDeviceId(selectedDeviceId.value)) {
+    return
+  }
+  void onDevicesChanged()
 }
 
 const loadSensorLimitsFromStorage = () => {
@@ -1299,6 +1335,10 @@ const closeDeviceConfigModal = () => {
 }
 
 const handleDeviceConfigSave = async (deviceId, formPayload) => {
+  if (isSimulatedDeviceId(deviceId)) {
+    await saveSimulatedDeviceFromForm(formPayload, deviceGroupStore)
+    return
+  }
   const assignment = await resolveGroupAssignment(formPayload.groupSelection, deviceGroupStore)
   const updateBody = buildDeviceUpdatePayload(formPayload, assignment)
   await deviceStore.updateDevice(deviceId, updateBody)

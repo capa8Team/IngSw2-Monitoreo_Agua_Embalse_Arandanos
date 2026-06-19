@@ -5,6 +5,7 @@ import {
   buildSimulatedIncrementalReadings,
   getSimulatedHistoricalDevices,
 } from './ArduinoConfig.js'
+import { getSimulatedExportDevice } from '../utils/simulatedDeviceStorage.js'
 import {
   normalizeHistoryRecord,
   buildFallbackReadings,
@@ -261,6 +262,13 @@ export async function fetchHistoricalTable({
 /** Datos para exportación PDF (admin). */
 export async function fetchHistoricalExportRows(registeredDevices = []) {
   const records = await fetchHistoricalReadings({ days: CHART_LOOKBACK_DAYS, limit: CHART_FETCH_LIMIT })
+
+  if (IS_SIMULATED_MODE) {
+    const simDevices = [getSimulatedExportDevice()]
+    const expanded = expandReadingsForRegisteredDevices(records, simDevices)
+    return flattenMeasurements(expanded)
+  }
+
   const expanded = expandReadingsForRegisteredDevices(records, registeredDevices)
   return flattenMeasurements(expanded)
 }
