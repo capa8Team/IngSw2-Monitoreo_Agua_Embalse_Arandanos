@@ -55,6 +55,9 @@ async def create_new_device(
         telemetry_key=payload.telemetry_key,
         organization_id=tenant.organization_id,
         organization_slug=tenant.organization_slug,
+        group_id=payload.group_id,
+        latitude=payload.latitude,
+        longitude=payload.longitude,
     )
     
     if not device:
@@ -169,6 +172,8 @@ async def update_device_info(
     existing = get_device(device_id)
     ensure_device_in_tenant(existing, tenant)
 
+    unset_group = payload.group_id == ""
+
     device = update_device(
         device_id=device_id,
         name=payload.name,
@@ -178,6 +183,10 @@ async def update_device_info(
         arduino_id=payload.arduino_id,
         telemetry_key=payload.telemetry_key,
         topic=payload.topic,
+        group_id=payload.group_id if not unset_group else None,
+        latitude=payload.latitude,
+        longitude=payload.longitude,
+        unset_group=unset_group,
     )
     
     if not device:

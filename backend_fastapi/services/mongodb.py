@@ -444,6 +444,9 @@ def create_device(
     telemetry_key: str | None = None,
     organization_id: str | None = None,
     organization_slug: str | None = None,
+    group_id: str | None = None,
+    latitude: float | None = None,
+    longitude: float | None = None,
 ) -> Optional[dict]:
     """Crea un nuevo dispositivo en la base de datos."""
     if db is None:
@@ -464,6 +467,9 @@ def create_device(
             "device_type": device_type,
             "location": location,
             "city": city,
+            "group_id": group_id,
+            "latitude": latitude,
+            "longitude": longitude,
             "status": "unknown",
             "arduino_id": arduino_id,
             "telemetry_key": telemetry_key,
@@ -589,6 +595,12 @@ def update_device(
     arduino_id: str | None = None,
     telemetry_key: str | None = None,
     topic: str | None = None,
+    group_id: str | None = None,
+    latitude: float | None = None,
+    longitude: float | None = None,
+    *,
+    unset_group: bool = False,
+    unset_coordinates: bool = False,
 ) -> Optional[dict]:
     """Actualiza un dispositivo existente."""
     if db is None:
@@ -597,6 +609,7 @@ def update_device(
     try:
         collection = db["devices"]
         update_data = {"updated_at": utc_now()}
+        unset_data: dict = {}
         
         if name is not None:
             update_data["name"] = name
@@ -612,10 +625,26 @@ def update_device(
             update_data["telemetry_key"] = telemetry_key
         if topic is not None:
             update_data["topic"] = topic
+        if unset_group:
+            unset_data["group_id"] = ""
+        elif group_id is not None:
+            update_data["group_id"] = group_id
+        if unset_coordinates:
+            unset_data["latitude"] = ""
+            unset_data["longitude"] = ""
+        else:
+            if latitude is not None:
+                update_data["latitude"] = latitude
+            if longitude is not None:
+                update_data["longitude"] = longitude
+        
+        update_op: dict = {"$set": update_data}
+        if unset_data:
+            update_op["$unset"] = unset_data
         
         result = collection.find_one_and_update(
             {"_id": device_id},
-            {"$set": update_data},
+            update_op,
             return_document=True
         )
         
@@ -737,4 +766,166 @@ def delete_device(device_id: str) -> bool:
         return False
     except Exception as e:
         logger.error("Error eliminando dispositivo: %s", e)
+        return False
+
+
+# ============================================================================
+# GRUPOS DE DISPOSITIVOS
+# ============================================================================
+def _count_devices_in_group(group_id: str, org_filter: dict | None = None) -> int:
+    if db is None:
+        return 0
+    try:
+        query: dict = {"group_id": group_id, **_active_device_filter()}
+        query = _merge_org_filter(query, org_filter)
+        return db["devices"].count_documents(query)
+    except Exception as e:
+        logger.error("Error contando dispositivos del grupo %s: %s", group_id, e)
+        return 0
+
+
+def _serialize_group(doc: dict, org_filter: dict | None = None) -> dict:
+    group_id = doc.get("_id", "")
+    return {
+        "id": group_id,
+        "name": doc.get("name", ""),
+        "description": doc.get("description", ""),
+        "location_label": doc.get("location_label", ""),
+        "city": doc.get("city", ""),
+        "latitude": doc.get("latitude", 0.0),
+        "longitude": doc.get("longitude", 0.0),
+        "device_count": _count_devices_in_group(group_id, org_filter),
+        "created_at": doc.get("created_at"),
+        "updated_at": doc.get("updated_at"),
+        "active": doc.get("active", True),
+    }
+
+
+def create_device_group(
+    name: str,
+    latitude: float,
+    longitude: float,
+    description: str = "",
+    location_label: str = "",
+    city: str = "",
+    organization_id: str | None = None,
+    organization_slug: str | None = None,
+) -> Optional[dict]:
+    if db is None:
+        return None
+    try:
+        import uuid
+        group_id = str(uuid.uuid4())
+        now = utc_now()
+        org_defaults = _default_org_fields()
+        doc = {
+            "_id": group_id,
+            "id": group_id,
+            "name": name,
+            "description": description,
+            "location_label": location_label,
+            "city": city,
+            "latitude": latitude,
+            "longitude": longitude,
+            "created_at": now,
+            "updated_at": now,
+            "active": True,
+            "organization_id": organization_id or org_defaults.get("organization_id"),
+            "organization_slug": organization_slug or org_defaults.get("organization_slug"),
+        }
+        db["device_groups"].insert_one(doc)
+        return _serialize_group(doc)
+    except Exception as e:
+        logger.error("Error creando grupo de dispositivos: %s", e)
+        return None
+
+
+def get_device_group(group_id: str) -> Optional[dict]:
+    if db is None:
+        return None
+    try:
+        doc = db["device_groups"].find_one({"_id": group_id, "active": {"$ne": False}})
+        if not doc:
+            return None
+        return _serialize_group(doc)
+    except Exception as e:
+        logger.error("Error obteniendo grupo %s: %s", group_id, e)
+        return None
+
+
+def get_all_device_groups(
+    active_only: bool = True,
+    org_filter: dict | None = None,
+) -> list[dict]:
+    if db is None:
+        return []
+    try:
+        query: dict = {"active": {"$ne": False}} if active_only else {}
+        query = _merge_org_filter(query, org_filter)
+        docs = list(db["device_groups"].find(query).sort("name", 1))
+        return [_serialize_group(doc, org_filter) for doc in docs]
+    except Exception as e:
+        logger.error("Error listando grupos de dispositivos: %s", e)
+        return []
+
+
+def update_device_group(
+    group_id: str,
+    name: str | None = None,
+    description: str | None = None,
+    location_label: str | None = None,
+    city: str | None = None,
+    latitude: float | None = None,
+    longitude: float | None = None,
+    active: bool | None = None,
+) -> Optional[dict]:
+    if db is None:
+        return None
+    try:
+        update_data = {"updated_at": utc_now()}
+        if name is not None:
+            update_data["name"] = name
+        if description is not None:
+            update_data["description"] = description
+        if location_label is not None:
+            update_data["location_label"] = location_label
+        if city is not None:
+            update_data["city"] = city
+        if latitude is not None:
+            update_data["latitude"] = latitude
+        if longitude is not None:
+            update_data["longitude"] = longitude
+        if active is not None:
+            update_data["active"] = active
+
+        result = db["device_groups"].find_one_and_update(
+            {"_id": group_id},
+            {"$set": update_data},
+            return_document=True,
+        )
+        if result:
+            return _serialize_group(result)
+        return None
+    except Exception as e:
+        logger.error("Error actualizando grupo %s: %s", group_id, e)
+        return None
+
+
+def delete_device_group(group_id: str) -> bool:
+    if db is None:
+        return False
+    try:
+        result = db["device_groups"].update_one(
+            {"_id": group_id},
+            {"$set": {"active": False, "updated_at": utc_now()}},
+        )
+        if result.matched_count > 0:
+            db["devices"].update_many(
+                {"group_id": group_id},
+                {"$unset": {"group_id": ""}, "$set": {"updated_at": utc_now()}},
+            )
+            return True
+        return False
+    except Exception as e:
+        logger.error("Error eliminando grupo %s: %s", group_id, e)
         return False

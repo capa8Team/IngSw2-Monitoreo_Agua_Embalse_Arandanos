@@ -129,6 +129,9 @@ class Device(BaseModel):
     device_type: Literal["ESP8266", "Arduino", "STM32", "other"] = "ESP8266"
     location: str = Field(default="", max_length=200)
     city: str = Field(default="", max_length=100, description="Ciudad para datos de clima OpenWeather")
+    group_id: str | None = Field(default=None, description="ID del grupo/embalse al que pertenece")
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
     status: Literal["online", "offline", "unknown"] = "unknown"
     arduino_id: str | None = None
     telemetry_key: str | None = Field(
@@ -147,6 +150,9 @@ class DeviceCreate(BaseModel):
     device_type: Literal["ESP8266", "Arduino", "STM32", "other"] = Field(default="ESP8266", description="Tipo de microcontrolador")
     location: str = Field(default="", max_length=200, description="Ubicación o zona del dispositivo")
     city: str = Field(default="", max_length=100, description="Ciudad para datos de clima OpenWeather")
+    group_id: str | None = Field(default=None, description="Grupo/embalse al que pertenece")
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
     arduino_id: str | None = Field(default=None, description="ID del Arduino (auto-detectado)")
     telemetry_key: str | None = Field(
         default=None,
@@ -159,6 +165,9 @@ class DeviceUpdate(BaseModel):
     name: str | None = Field(None, max_length=100)
     location: str | None = Field(None, max_length=200)
     city: str | None = Field(None, max_length=100, description="Ciudad para datos de clima")
+    group_id: str | None = Field(None, description="Grupo/embalse; cadena vacía para desagrupar")
+    latitude: float | None = Field(None, ge=-90, le=90)
+    longitude: float | None = Field(None, ge=-180, le=180)
     arduino_id: str | None = Field(None, max_length=100)
     telemetry_key: str | None = Field(None, max_length=100)
     topic: str | None = Field(None, max_length=200)
@@ -170,6 +179,9 @@ class DeviceResponse(BaseModel):
     device_type: str
     location: str
     city: str
+    group_id: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
     status: str
     battery: int
     last_sync: datetime | None
@@ -186,3 +198,38 @@ class DeviceDetectionPayload(BaseModel):
     device_type: str = "ESP8266"
     location: str | None = None
     city: str | None = None
+    group_id: str | None = None
+
+
+# ============================================================================
+# GRUPOS DE DISPOSITIVOS (EMBALSES / UBICACIONES)
+# ============================================================================
+class DeviceGroupCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100, description="Nombre del grupo o embalse")
+    description: str = Field(default="", max_length=300)
+    location_label: str = Field(default="", max_length=200, description="Descripción de la ubicación")
+    city: str = Field(default="", max_length=100)
+    latitude: float = Field(..., ge=-90, le=90)
+    longitude: float = Field(..., ge=-180, le=180)
+
+class DeviceGroupUpdate(BaseModel):
+    name: str | None = Field(None, max_length=100)
+    description: str | None = Field(None, max_length=300)
+    location_label: str | None = Field(None, max_length=200)
+    city: str | None = Field(None, max_length=100)
+    latitude: float | None = Field(None, ge=-90, le=90)
+    longitude: float | None = Field(None, ge=-180, le=180)
+    active: bool | None = None
+
+class DeviceGroupResponse(BaseModel):
+    id: str
+    name: str
+    description: str
+    location_label: str
+    city: str
+    latitude: float
+    longitude: float
+    device_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+    active: bool

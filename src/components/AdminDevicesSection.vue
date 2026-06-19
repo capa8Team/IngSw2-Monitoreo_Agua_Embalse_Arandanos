@@ -14,6 +14,7 @@
     <AddDeviceModal
       v-if="isAdmin"
       :show="showAddModal"
+      :groups="groups"
       title="Agregar Nuevo Dispositivo"
       @close="closeAddModal"
       @submit="handleAddDevice"
@@ -34,8 +35,10 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useDeviceStore } from '../stores/deviceStore'
+import { useDeviceGroupStore } from '../stores/deviceGroupStore'
+import { resolveGroupAssignment } from '../utils/deviceGroupAssignment.js'
 import AddDeviceModal from './AddDeviceModal.vue'
 import DeviceDetectionModal from './DeviceDetectionModal.vue'
 
@@ -57,11 +60,19 @@ const props = defineProps({
 })
 
 const deviceStore = useDeviceStore()
+const deviceGroupStore = useDeviceGroupStore()
 
 // Propiedades computadas
 const isAdmin = computed(() => props.isAdmin)
 const loading = computed(() => deviceStore.loading)
 const availableMicrocontrollers = computed(() => deviceStore.availableMicrocontrollers)
+const groups = computed(() => deviceGroupStore.groups)
+
+onMounted(() => {
+  if (isAdmin.value) {
+    void deviceGroupStore.fetchGroups()
+  }
+})
 
 // Estado local
 const showAddModal = ref(false)
@@ -90,6 +101,7 @@ const closeDetectionModal = () => {
 
 const handleAddDevice = async (deviceData) => {
   try {
+    const assignment = await resolveGroupAssignment(deviceData.groupSelection, deviceGroupStore)
     await deviceStore.createDevice({
       name: deviceData.name,
       device_type: deviceData.device_type,
@@ -98,6 +110,9 @@ const handleAddDevice = async (deviceData) => {
       arduino_id: deviceData.arduino_id || null,
       telemetry_key: deviceData.telemetry_key || null,
       topic: deviceData.topic || null,
+      group_id: assignment.group_id,
+      latitude: assignment.latitude,
+      longitude: assignment.longitude,
     })
     closeAddModal()
     emit('devices-changed')

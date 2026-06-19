@@ -36,6 +36,17 @@
         </button>
 
         <button
+          class="view-btn map-view"
+          :class="{ active: viewMode === 'map' }"
+          @click="viewMode = 'map'"
+          title="Vista de mapa"
+        >
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+          </svg>
+        </button>
+
+        <button
           v-if="isAdmin"
           class="admin-btn"
           @click="$emit('open-user-management')"
@@ -87,6 +98,14 @@
         <p class="loading-text">Cargando dispositivos…</p>
       </div>
 
+      <div v-else-if="viewMode === 'map'" class="map-section">
+        <DeviceMap
+          :devices="devicesData"
+          :groups="deviceGroups"
+          @select-device="selectDevice"
+        />
+      </div>
+
       <div v-else class="devices-grid" :class="`view-${viewMode}`">
         <DeviceCard
           v-for="device in devicesData"
@@ -94,9 +113,11 @@
           :device="device"
           :is-selected="selectedDeviceId === device.id"
           :can-delete="isAdmin"
+          :can-configure="isAdmin"
           :deleting="deletingDeviceId === device.id"
           @select="selectDevice(device)"
           @delete="handleDeleteDevice"
+          @configure="openEditModal(device)"
         />
       </div>
 
@@ -109,24 +130,45 @@
         <p class="empty-text">No hay dispositivos conectados</p>
       </div>
     </main>
+
+    <EditDeviceModal
+      v-if="isAdmin"
+      :show="showEditModal"
+      :device="editingDevice"
+      :groups="deviceGroups"
+      :on-submit="handleEditDevice"
+      @close="closeEditModal"
+    />
   </div>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { getActiveOrganizationName } from '../services/apiContext.js'
 import DeviceCard from './DeviceCard.vue'
+import DeviceMap from './DeviceMap.vue'
+import EditDeviceModal from './EditDeviceModal.vue'
 import ThemeToggleButton from './ThemeToggleButton.vue'
 import AdminDevicesSection from './AdminDevicesSection.vue'
 import OrganizationSwitcher from './OrganizationSwitcher.vue'
 import { useDeviceStore } from '../stores/deviceStore'
+import { useDeviceGroupStore } from '../stores/deviceGroupStore'
+import { resolveGroupAssignment, buildDeviceUpdatePayload } from '../utils/deviceGroupAssignment.js'
 
 const activeOrganizationName = computed(() => getActiveOrganizationName())
 
 const viewMode = ref('grid')
 const selectedDeviceId = ref(null)
 const deletingDeviceId = ref(null)
+const showEditModal = ref(false)
+const editingDevice = ref(null)
 const deviceStore = useDeviceStore()
+const deviceGroupStore = useDeviceGroupStore()
+const deviceGroups = computed(() => deviceGroupStore.groups)
+
+onMounted(() => {
+  void deviceGroupStore.fetchGroups()
+})
 
 const props = defineProps({
   devicesData: {
@@ -167,6 +209,24 @@ const handleDeleteDevice = async (device) => {
   } finally {
     deletingDeviceId.value = null
   }
+}
+
+const openEditModal = (device) => {
+  editingDevice.value = device
+  showEditModal.value = true
+}
+
+const closeEditModal = () => {
+  showEditModal.value = false
+  editingDevice.value = null
+}
+
+const handleEditDevice = async (deviceId, formPayload) => {
+  const assignment = await resolveGroupAssignment(formPayload.groupSelection, deviceGroupStore)
+  const updateBody = buildDeviceUpdatePayload(formPayload, assignment)
+  await deviceStore.updateDevice(deviceId, updateBody)
+  await deviceGroupStore.fetchGroups()
+  emit('devices-changed')
 }
 
 const emit = defineEmits([
@@ -345,6 +405,10 @@ const emit = defineEmits([
 
 .devices-grid.view-list {
   grid-template-columns: 1fr;
+}
+
+.map-section {
+  margin-bottom: 24px;
 }
 
 .loading-state {

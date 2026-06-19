@@ -42,6 +42,7 @@
         <span class="status-label">{{ overallStatusText }}</span>
       </div>
       <div v-if="isAdmin" class="header-center admin-top-actions">
+        <button class="admin-nav-btn" @click="openDeviceConfigModal">Configurar dispositivo</button>
         <button class="admin-nav-btn" @click="openAlertConfigView">Configuracion rango alertas</button>
       </div>
       <div class="header-right">
@@ -613,12 +614,22 @@
       </section>
     </main>
   </div>
+
+  <EditDeviceModal
+    v-if="isAdmin"
+    :show="showDeviceConfigModal"
+    :device="selectedDevice"
+    :groups="deviceGroupStore.groups"
+    :on-submit="handleDeviceConfigSave"
+    @close="closeDeviceConfigModal"
+  />
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import DeviceList from './DeviceList.vue'
+import EditDeviceModal from './EditDeviceModal.vue'
 import DashboardLoadingOverlay from './DashboardLoadingOverlay.vue'
 import ThemeToggleButton from './ThemeToggleButton.vue'
 import SensorCard from './SensorCard.vue'
@@ -629,6 +640,7 @@ import PdfExportModal from './historical/PdfExportModal.vue'
 import { useDeviceHistoricalCharts } from '../composables/useDeviceHistoricalCharts.js'
 import { useHistoricalExport } from '../composables/useHistoricalExport.js'
 import { useDeviceStore } from '../stores/deviceStore'
+import { useDeviceGroupStore } from '../stores/deviceGroupStore'
 import {
   mapApiDeviceToCard,
   mergeCardWithTelemetry,
@@ -657,10 +669,12 @@ import {
   getApiAuthHeaders,
   getSensorLimitsStorageKey,
 } from '../services/apiContext.js'
+import { resolveGroupAssignment, buildDeviceUpdatePayload } from '../utils/deviceGroupAssignment.js'
 
 const router = useRouter()
 const activeOrganizationName = computed(() => getActiveOrganizationName())
 const deviceStore = useDeviceStore()
+const deviceGroupStore = useDeviceGroupStore()
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 /** Telemetría en vivo por id de dispositivo (overlay sobre datos del API). */
@@ -836,13 +850,19 @@ const devices = computed(() => {
   return apiList
     .filter((apiDevice) => apiDevice.active !== false)
     .map((apiDevice) => {
-      const card = mapApiDeviceToCard(apiDevice, { dataSource })
+      const card = mapApiDeviceToCard(apiDevice, {
+        dataSource,
+        groups: deviceGroupStore.groups,
+      })
       return mergeCardWithTelemetry(card, telemetryByDeviceId.value[card.id])
     })
 })
 
 const loadDevices = async () => {
-  await deviceStore.fetchDevices(`${API_BASE_URL}/api/devices`)
+  await Promise.all([
+    deviceStore.fetchDevices(`${API_BASE_URL}/api/devices`),
+    deviceGroupStore.fetchGroups(),
+  ])
 }
 
 const onDevicesChanged = async () => {
@@ -874,6 +894,7 @@ const onOrganizationChanged = async () => {
   stopUsersAutoRefresh()
   stopChartsPolling()
   deviceStore.reset()
+  deviceGroupStore.reset()
   loadSensorLimitsFromStorage()
   await onDevicesChanged()
 }
@@ -902,6 +923,7 @@ const sensors = computed(() => ({
 const historyRecords = ref([])
 const lastProcessedAlertTimestamp = ref(0)
 const showPdfModal = ref(false)
+const showDeviceConfigModal = ref(false)
 
 const selectedDeviceArduinoId = computed(() => {
   const device = selectedDevice.value
@@ -1265,6 +1287,23 @@ const openAddDeviceFromDeviceList = () => {
   if (devicesSectionRef.value) {
     devicesSectionRef.value.openAddModal()
   }
+}
+
+const openDeviceConfigModal = () => {
+  if (!isAdmin.value) return
+  showDeviceConfigModal.value = true
+}
+
+const closeDeviceConfigModal = () => {
+  showDeviceConfigModal.value = false
+}
+
+const handleDeviceConfigSave = async (deviceId, formPayload) => {
+  const assignment = await resolveGroupAssignment(formPayload.groupSelection, deviceGroupStore)
+  const updateBody = buildDeviceUpdatePayload(formPayload, assignment)
+  await deviceStore.updateDevice(deviceId, updateBody)
+  await deviceGroupStore.fetchGroups()
+  await onDevicesChanged()
 }
 
 const handleLogout = () => {
