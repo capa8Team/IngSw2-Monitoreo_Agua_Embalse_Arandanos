@@ -31,7 +31,6 @@ venv/
 
 # Secrets, credenciales y entorno local
 .env
-.env
 backend_fastapi/.env
 backend_fastapi/.env.local
 *.credentials
@@ -40,14 +39,15 @@ backend_fastapi/.env.local
 **/credenciales*.md
 docs/CREDENCIALES_EQUIPO.md
 secrets/
+
+# SQL local con datos de orgs/cuentas (no subir)
+database/supabase/CREATE_NEW_ORGANIZATION_AND_ADMIN.sql
 SketchArduino/**/secrets.h
 SketchArduino/**/Secret.h
 
-# AWS IoT Core (IotCore/) — certificados del dispositivo
-IotCore/*-certificate.pem.crt
-IotCore/*-private.pem.key
-IotCore/*-public.pem.key
-IotCore/AmazonRootCA*.pem
+# AWS IoT Core (IotCore/) — certificados del dispositivo (no subir)
+IotCore/*
+!IotCore/README.md
 *.p12
 
 # Logs locales del backend (pueden contener datos de sesión)

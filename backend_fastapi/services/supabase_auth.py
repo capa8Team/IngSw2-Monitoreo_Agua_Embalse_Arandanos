@@ -14,23 +14,38 @@ ROLE_ADMIN = "administrador"
 ROLE_EMPLOYEE = "empleado"
 
 
+_PLACEHOLDER_MARKERS = ("your-project", "your-anon-key", "tu-proyecto", "anon-key-here")
+
+
+def _is_placeholder(value: str | None) -> bool:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return True
+    return any(marker in normalized for marker in _PLACEHOLDER_MARKERS)
+
+
+def _first_valid_supabase_value(*values: str | None) -> str:
+    for value in values:
+        if not _is_placeholder(value):
+            return str(value).strip()
+    return ""
+
+
 def _get_supabase_url() -> str:
-    return (
-        settings.SUPABASE_URL
-        or settings.VITE_SUPABASE_URL
-        or os.getenv("SUPABASE_URL")
-        or os.getenv("VITE_SUPABASE_URL")
-        or ""
+    return _first_valid_supabase_value(
+        settings.VITE_SUPABASE_URL,
+        settings.SUPABASE_URL,
+        os.getenv("VITE_SUPABASE_URL"),
+        os.getenv("SUPABASE_URL"),
     ).rstrip("/")
 
 
 def _get_supabase_anon_key() -> str:
-    return (
-        settings.SUPABASE_ANON_KEY
-        or settings.VITE_SUPABASE_ANON_KEY
-        or os.getenv("SUPABASE_ANON_KEY")
-        or os.getenv("VITE_SUPABASE_ANON_KEY")
-        or ""
+    return _first_valid_supabase_value(
+        settings.VITE_SUPABASE_ANON_KEY,
+        settings.SUPABASE_ANON_KEY,
+        os.getenv("VITE_SUPABASE_ANON_KEY"),
+        os.getenv("SUPABASE_ANON_KEY"),
     )
 
 

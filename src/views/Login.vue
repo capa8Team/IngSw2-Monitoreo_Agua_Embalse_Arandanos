@@ -9,7 +9,7 @@
         <p>Sistema de Monitoreo de Agua</p>
       </div>
 
-      <form @submit.prevent="handleLogin" class="login-form">
+      <form v-if="mode === 'login'" @submit.prevent="handleLogin" class="login-form">
         <div class="form-group">
           <label for="email">Correo Electrónico</label>
           <input
@@ -36,21 +36,55 @@
           {{ error }}
         </div>
 
-        <button
-          type="submit"
-          class="login-btn"
-          :disabled="isLoading"
-        >
+        <button type="submit" class="login-btn" :disabled="isLoading">
           <span v-if="!isLoading">Iniciar Sesión</span>
           <span v-else>Cargando...</span>
         </button>
       </form>
 
-      <div class="demo-info">
-        <p><strong>Nota:</strong></p>
-        <p>Usa el correo y la contraseña definidos al crear la cuenta en Supabase.</p>
-        <p v-if="demoHint">Demo local (sin Supabase): admin@test.com / 123456789</p>
-      </div>
+      <form v-else @submit.prevent="handleSetPassword" class="login-form">
+        <p class="setup-intro">
+          Es la primera vez que inicias sesión con esta cuenta. Cambia tu contraseña para continuar.
+        </p>
+
+        <div class="form-group">
+          <label for="new-password">Nueva contraseña</label>
+          <input
+            v-model="setupForm.password"
+            type="password"
+            id="new-password"
+            placeholder="Mínimo 6 caracteres"
+            required
+            minlength="6"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="confirm-password">Confirmar contraseña</label>
+          <input
+            v-model="setupForm.confirmPassword"
+            type="password"
+            id="confirm-password"
+            placeholder="Repite la contraseña"
+            required
+            minlength="6"
+          />
+        </div>
+
+        <div v-if="error" class="error-message">
+          {{ error }}
+        </div>
+
+        <button type="submit" class="login-btn" :disabled="isLoading">
+          <span v-if="!isLoading">Guardar contraseña e ingresar</span>
+          <span v-else>Guardando...</span>
+        </button>
+
+        <button type="button" class="link-btn" :disabled="isLoading" @click="backToLogin">
+          Volver
+        </button>
+      </form>
+
     </div>
   </div>
 </template>
@@ -59,37 +93,105 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import ThemeToggleButton from '../components/ThemeToggleButton.vue'
-import { apiLogin, persistSession, startSessionIdleWatcher } from '../services/sessionAuth.js'
+import {
+  apiLogin,
+  clearFirstAccessFlow,
+  completeFirstAccessWithSession,
+  persistSession,
+  startSessionIdleWatcher,
+} from '../services/sessionAuth.js'
+import { useDeviceStore } from '../stores/deviceStore.js'
 
 const router = useRouter()
+const deviceStore = useDeviceStore()
 
+const mode = ref('login')
 const form = ref({
   email: '',
   password: '',
 })
+const setupForm = ref({
+  password: '',
+  confirmPassword: '',
+})
 
 const error = ref('')
 const isLoading = ref(false)
-const demoHint = !import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY
+function resetSetupForm() {
+  setupForm.value = { password: '', confirmPassword: '' }
+}
+
+function validatePasswordPair() {
+  if (setupForm.value.password.length < 6) {
+    error.value = 'La contraseña debe tener al menos 6 caracteres'
+    return false
+  }
+  if (setupForm.value.password !== setupForm.value.confirmPassword) {
+    error.value = 'Las contraseñas no coinciden'
+    return false
+  }
+  return true
+}
+
+async function finishSession(data) {
+  if (!data?.access_token) {
+    throw new Error('No se recibió una sesión válida. Intenta iniciar sesión de nuevo.')
+  }
+  persistSession(data)
+  startSessionIdleWatcher(router)
+  mode.value = 'login'
+  deviceStore.prefetchDevicesForActiveOrg()
+  void router.push('/dashboard')
+}
+
+function backToLogin() {
+  clearFirstAccessFlow()
+  mode.value = 'login'
+  error.value = ''
+  resetSetupForm()
+}
 
 const handleLogin = async () => {
   error.value = ''
+  const email = form.value.email.trim().toLowerCase()
+  const password = String(form.value.password || '')
 
-  if (!form.value.email || !form.value.password) {
+  if (!email || !password) {
     error.value = 'Por favor completa todos los campos'
     return
   }
 
   isLoading.value = true
+  void import('../components/DeviceDashboard.vue')
   try {
-    const email = form.value.email.trim()
-    const data = await apiLogin(email, form.value.password)
-    persistSession(data)
-
-    startSessionIdleWatcher(router)
-    await router.push('/dashboard')
+    const data = await apiLogin(email, password)
+    if (data?.requiresPasswordSetup) {
+      mode.value = 'change-password'
+      resetSetupForm()
+      return
+    }
+    await finishSession(data)
   } catch (e) {
     error.value = e?.message || 'Error al iniciar sesión. Verifica que la API esté en ejecución.'
+  } finally {
+    isLoading.value = false
+  }
+}
+
+const handleSetPassword = async () => {
+  error.value = ''
+  if (!validatePasswordPair()) return
+
+  isLoading.value = true
+  try {
+    const data = await completeFirstAccessWithSession(
+      form.value.email.trim().toLowerCase(),
+      setupForm.value.password,
+      form.value.password,
+    )
+    await finishSession(data)
+  } catch (e) {
+    error.value = e?.message || 'No se pudo guardar la contraseña'
   } finally {
     isLoading.value = false
   }
@@ -182,6 +284,14 @@ const handleLogin = async () => {
   box-shadow: 0 0 0 3px rgba(102, 187, 106, 0.1);
 }
 
+.setup-intro {
+  margin: 0;
+  font-size: 14px;
+  color: #555555;
+  line-height: 1.5;
+  text-align: center;
+}
+
 .error-message {
   background-color: #fee;
   color: #c33;
@@ -217,41 +327,24 @@ const handleLogin = async () => {
   border-color: #99cc99;
 }
 
-.login-footer {
-  text-align: center;
-  margin-top: 20px;
-  font-size: 14px;
-  color: #888888;
-}
-
-.login-footer a {
+.link-btn {
+  background: none;
+  border: none;
   color: #66bb6a;
-  text-decoration: none;
+  font-size: 14px;
   font-weight: 600;
-  transition: color 0.3s;
+  cursor: pointer;
+  padding: 4px 0;
+  text-align: center;
 }
 
-.login-footer a:hover {
-  color: #5aa859;
+.link-btn:hover:not(:disabled) {
   text-decoration: underline;
 }
 
-.demo-info {
-  background: #f8f9fa;
-  border: 1px solid #e8e8e8;
-  padding: 12px;
-  border-radius: 6px;
-  margin-top: 20px;
-  font-size: 12px;
-  color: #888888;
-}
-
-.demo-info p {
-  margin: 4px 0;
-}
-
-.demo-info strong {
-  color: #333333;
+.link-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 @media (max-width: 480px) {

@@ -114,6 +114,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import { getApiAuthHeaders } from '../services/apiContext.js'
 
 const props = defineProps({
   deviceId: {
@@ -203,7 +204,7 @@ const saveCity = async () => {
     const apiUrl = import.meta.env.VITE_API_URL || ''
     const response = await fetch(`${apiUrl}/api/devices/${props.deviceId}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getApiAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ city: cityInput.value.trim() })
     })
 
@@ -243,7 +244,7 @@ const fetchWeatherData = async (cityOverride = null) => {
       : `${apiUrl}/api/devices/${props.deviceId}/weather`
 
     const response = await fetch(url, {
-      headers: { 'Content-Type': 'application/json' }
+      headers: getApiAuthHeaders({ 'Content-Type': 'application/json' }),
     })
 
     if (!response.ok) {

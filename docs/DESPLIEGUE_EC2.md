@@ -9,7 +9,7 @@ Guía para publicar el stack completo (MongoDB + FastAPI + Vue/nginx) en una ins
 | Instancia | **t3.small** o superior (mín. 2 GB RAM para MongoDB) |
 | SO | **Ubuntu 22.04 LTS** (AMI oficial) |
 | Disco | 20 GB gp3 o más |
-| Supabase | Proyecto configurado (`database/supabase/SUPABASE_SETUP.sql`) |
+| Supabase | Proyecto configurado (scripts en `database/supabase/`, ver `README.md`) |
 | Certificados IoT | Carpeta `IotCore/` (no está en git; copiar por SCP) |
 
 ## 1. Crear la instancia EC2

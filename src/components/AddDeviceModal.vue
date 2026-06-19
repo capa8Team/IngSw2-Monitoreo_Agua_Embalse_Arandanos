@@ -99,6 +99,12 @@
             </small>
           </div>
 
+          <DeviceGroupSelector
+            :groups="groups"
+            field-id="add"
+            @change="onGroupSelectionChange"
+          />
+
           <div class="form-actions">
             <button
               type="button"
@@ -128,6 +134,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
+import DeviceGroupSelector from './DeviceGroupSelector.vue'
 
 const props = defineProps({
   show: {
@@ -137,6 +144,10 @@ const props = defineProps({
   title: {
     type: String,
     default: 'Agregar Nuevo Dispositivo'
+  },
+  groups: {
+    type: Array,
+    default: () => []
   },
   onSubmit: {
     type: Function,
@@ -162,6 +173,11 @@ const formData = ref({
 
 const isSubmitting = ref(false)
 const errorMessage = ref('')
+const groupSelection = ref(null)
+
+const onGroupSelectionChange = (selection) => {
+  groupSelection.value = selection
+}
 
 const showModal = computed({
   get: () => props.show,
@@ -191,6 +207,7 @@ const resetForm = () => {
     topic: ''
   }
   errorMessage.value = ''
+  groupSelection.value = null
 }
 
 const handleSubmit = async () => {
@@ -200,10 +217,11 @@ const handleSubmit = async () => {
   errorMessage.value = ''
 
   try {
+    const payload = { ...formData.value, groupSelection: groupSelection.value }
     if (props.onSubmit) {
-      await props.onSubmit(formData.value)
+      await props.onSubmit(payload)
     }
-    emit('submit', formData.value)
+    emit('submit', payload)
     closeModal()
   } catch (error) {
     errorMessage.value = `Error: ${error.message}`

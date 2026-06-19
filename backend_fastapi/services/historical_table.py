@@ -16,7 +16,8 @@ SENSOR_META: dict[str, dict[str, str | float]] = {
 }
 
 HISTORICAL_LOOKBACK_DAYS = 7
-TABLE_FETCH_LIMIT = 1500
+TABLE_FETCH_LIMIT = 400
+LIVE_READINGS_LIMIT = 80
 
 
 def _device_id(device: dict) -> str:
@@ -153,6 +154,10 @@ def get_historical_table_page(
     date_from: date | None = None,
     date_to: date | None = None,
     lookback_days: int = HISTORICAL_LOOKBACK_DAYS,
+    live: bool = False,
+    since: datetime | None = None,
+    org_filter: dict | None = None,
+    readings_filter: dict | None = None,
 ) -> dict:
     page = max(1, page)
     page_size = max(1, min(page_size, 50))
@@ -160,11 +165,25 @@ def get_historical_table_page(
     now = datetime.now(timezone.utc)
     default_since = now - timedelta(days=max(1, min(lookback_days, 30)))
     filter_since, filter_until = _date_bounds(date_from, date_to)
-    since = filter_since or default_since
-    until = filter_until
 
-    readings = query_sensor_readings(since=since, until=until, limit=TABLE_FETCH_LIMIT)
-    devices = get_all_devices(active_only=True)
+    if live:
+        effective_since = since or (now - timedelta(hours=24))
+        readings = query_sensor_readings(
+            since=effective_since,
+            until=filter_until,
+            limit=LIVE_READINGS_LIMIT,
+            tenant_filter=readings_filter,
+        )
+    else:
+        effective_since = filter_since or since or default_since
+        until = filter_until
+        readings = query_sensor_readings(
+            since=effective_since,
+            until=until,
+            limit=TABLE_FETCH_LIMIT,
+            tenant_filter=readings_filter,
+        )
+    devices = get_all_devices(active_only=True, org_filter=org_filter)
     expanded = _expand_readings(readings, devices)
     rows = _flatten_rows(expanded, sensor_filter=sensor)
 

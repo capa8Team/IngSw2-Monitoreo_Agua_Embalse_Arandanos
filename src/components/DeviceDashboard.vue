@@ -6,12 +6,20 @@
       :devices-data="devices"
       :is-admin="isAdmin"
       @select-device="selectDevice"
-      @open-history="openHistory"
+      @open-pdf-export="openPdfModal"
       @open-user-management="openUserManagementView"
       @open-account-activity="openAccountActivityView"
       @logout="handleLogout"
       @add-device="openAddDeviceFromDeviceList"
       @devices-changed="onDevicesChanged"
+      @organization-changed="onOrganizationChanged"
+    />
+
+    <PdfExportModal
+      v-if="showPdfModal"
+      :measurementRows="exportRows"
+      :deviceOptions="deviceOptions"
+      @close="showPdfModal = false"
     />
   </div>
 
@@ -34,6 +42,7 @@
         <span class="status-label">{{ overallStatusText }}</span>
       </div>
       <div v-if="isAdmin" class="header-center admin-top-actions">
+        <button class="admin-nav-btn" @click="openDeviceConfigModal">Configurar dispositivo</button>
         <button class="admin-nav-btn" @click="openAlertConfigView">Configuracion rango alertas</button>
       </div>
       <div class="header-right">
@@ -42,7 +51,6 @@
           <span v-else-if="selectedDevice.dataSource === 'simulated'">⚙️ Datos Simulados</span>
           <span v-else>❓ Fuente Desconocida</span>
         </div>
-        <button class="history-btn" type="button" @click="openHistory" title="Ver datos históricos">Históricos</button>
         <button class="logout-btn" type="button" @click="handleLogout">Cerrar sesión</button>
       </div>
     </header>
@@ -122,6 +130,39 @@
           @city-updated="onDevicesChanged"
         />
       </div>
+
+      <section class="historical-charts-section">
+        <div class="historical-charts-header">
+          <h2 class="section-title">Historial de sensores</h2>
+          <span class="source-badge" :class="chartsSimulatedMode ? 'source-simulated' : 'source-real'">
+            {{ chartsSimulatedMode ? '⚙️ Datos simulados' : '📡 Datos en vivo' }}
+          </span>
+        </div>
+        <p v-if="chartsRefreshing" class="history-refresh-hint">Actualizando datos históricos…</p>
+        <div class="historical-charts-grid">
+          <SensorChart
+            sensorKey="ph"
+            v-model:period="phPeriod"
+            :chartData="deviceChartData.ph"
+            :stats="deviceChartStats.ph"
+            :loading="chartsInitialLoading && !hasDeviceChartData"
+          />
+          <SensorChart
+            sensorKey="temperature"
+            v-model:period="tempPeriod"
+            :chartData="deviceChartData.temperature"
+            :stats="deviceChartStats.temperature"
+            :loading="chartsInitialLoading && !hasDeviceChartData"
+          />
+          <SensorChart
+            sensorKey="conductivity"
+            v-model:period="condPeriod"
+            :chartData="deviceChartData.conductivity"
+            :stats="deviceChartStats.conductivity"
+            :loading="chartsInitialLoading && !hasDeviceChartData"
+          />
+        </div>
+      </section>
 
       <section class="alerts-section">
         <div class="alerts-header">
@@ -328,18 +369,16 @@
         </button>
         <div>
           <h1 class="header-title">Gestion de usuarios</h1>
-          <p class="header-subtitle">Crea cuentas y administra roles en Supabase</p>
+          <p v-if="activeOrganizationName" class="org-assign-hint header-org-label">
+            Organización: {{ activeOrganizationName }}
+          </p>
+          <p class="header-subtitle">Crea cuentas y administra roles de la organización</p>
         </div>
       </div>
       <div class="header-center admin-top-actions">
         <button class="admin-nav-btn active">Gestion de usuarios</button>
       </div>
       <div class="header-right">
-        <div class="data-source-badge" :class="`source-${selectedDevice.dataSource}`">
-          <span v-if="selectedDevice.dataSource === 'real'">📊 Datos Reales</span>
-          <span v-else-if="selectedDevice.dataSource === 'simulated'">⚙️ Datos Simulados</span>
-          <span v-else>❓ Fuente Desconocida</span>
-        </div>
         <button class="logout-btn" type="button" @click="handleLogout">Cerrar sesión</button>
       </div>
     </header>
@@ -357,6 +396,7 @@
 
           <div class="user-creation-form">
             <h3>Crear nueva cuenta</h3>
+            <p class="org-assign-hint">Organización: {{ activeOrganizationName }}</p>
             <div class="form-grid">
               <div class="form-group">
                 <label>Email:</label>
@@ -398,13 +438,11 @@
           <div class="users-list">
             <div class="users-list-header">
               <div class="users-list-title-block">
-                <h3>Usuarios en Supabase Auth</h3>
+                <h3>Usuarios existentes</h3>
                 <p v-if="!isLoadingUsers" class="users-count-summary">
-                  <strong>{{ supabaseUsersTotal }}</strong> en Supabase Auth —
+                  <strong>{{ supabaseUsersTotal }}</strong> usuarios —
                   <strong class="verified-count">{{ supabaseUsersVerified }}</strong> verificados,
                   <strong class="pending-count">{{ supabaseUsersPending }}</strong> pendientes
-                  <span v-if="usersListSource === 'supabase_auth'" class="users-source-tag">· sincronizado con Auth</span>
-                  <span v-else-if="usersListSource === 'users_roles'" class="users-source-tag users-source-warn">· incompleto (falta RPC)</span>
                 </p>
               </div>
               <button class="refresh-users-btn" @click="loadExistingUsers" :disabled="isLoadingUsers">
@@ -482,13 +520,13 @@
             </div>
             <div v-else class="no-users">
               <template v-if="supabaseSessionWarning">
-                Inicia sesión con una cuenta admin de Supabase para ver el listado.
+                No se pudo cargar el listado. Cierra sesión e inicia de nuevo con tu cuenta de administrador.
               </template>
               <template v-else-if="existingUsers.length > 0 && displayedUsers.length === 0">
                 Ningún usuario coincide con el filtro seleccionado.
               </template>
               <template v-else>
-                No hay usuarios en Supabase Auth (total: 0).
+                No hay usuarios registrados en esta organización.
               </template>
             </div>
           </div>
@@ -508,7 +546,10 @@
         </button>
         <div>
           <h1 class="header-title">Actividad de cuentas</h1>
-          <p class="header-subtitle">Monitoreo de inicios de sesión (solo administradores)</p>
+          <p v-if="activeOrganizationName" class="org-assign-hint header-org-label">
+            Organización: {{ activeOrganizationName }}
+          </p>
+          <p class="header-subtitle">Monitoreo de inicios de sesión de esta organización</p>
         </div>
       </div>
       <div class="header-center admin-top-actions">
@@ -574,125 +615,32 @@
     </main>
   </div>
 
-  <div v-else class="history-view">
-    <header class="dashboard-header">
-      <div class="header-content">
-        <ThemeToggleButton />
-        <button class="back-btn" @click="goBack" title="Volver a dispositivos">
-          <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
-            <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
-          </svg>
-        </button>
-        <div>
-          <h1 class="header-title">Registro Histórico</h1>
-          <p class="header-subtitle">Todas las mediciones guardadas por dispositivo y fecha</p>
-        </div>
-      </div>
-      <button class="pdf-btn" @click="downloadHistoryPdf">Descargar PDF</button>
-    </header>
-
-    <main class="dashboard-content">
-      <section class="filters-section">
-        <h2 class="section-title">Opciones de filtrado</h2>
-        <div class="filters-grid">
-          <label class="filter-item">
-            <span>Dispositivo</span>
-            <select v-model="historyFilters.deviceId">
-              <option value="all">Todos</option>
-              <option v-for="device in devices" :key="device.id" :value="String(device.id)">
-                {{ device.name }}
-              </option>
-            </select>
-          </label>
-          <label class="filter-item">
-            <span>Fecha</span>
-            <select v-model="historyFilters.date">
-              <option value="all">Todas</option>
-              <option v-for="dateValue in availableDates" :key="dateValue" :value="dateValue">
-                {{ dateValue }}
-              </option>
-            </select>
-          </label>
-        </div>
-      </section>
-
-      <section class="charts-section">
-        <h2 class="section-title">Gráficos de tendencias</h2>
-        <div class="chart-grid">
-          <div class="chart-card">
-            <h3>pH</h3>
-            <svg viewBox="0 0 320 120" class="line-chart">
-              <polyline :points="buildLineChartPoints(historyFilteredRows, 'ph', 5, 9)" />
-            </svg>
-          </div>
-          <div class="chart-card">
-            <h3>Temperatura</h3>
-            <svg viewBox="0 0 320 120" class="line-chart">
-              <polyline :points="buildLineChartPoints(historyFilteredRows, 'temperature', 15, 35)" />
-            </svg>
-          </div>
-          <div class="chart-card">
-            <h3>Conductividad</h3>
-            <svg viewBox="0 0 320 120" class="line-chart">
-              <polyline :points="buildLineChartPoints(historyFilteredRows, 'conductivity', 200, 1800)" />
-            </svg>
-          </div>
-        </div>
-      </section>
-
-      <section class="alerts-section">
-        <div class="alerts-header">
-          <h2 class="section-title">Mediciones filtradas</h2>
-          <span class="alerts-count">{{ historyFilteredRows.length }} filas</span>
-        </div>
-        <div class="table-wrap">
-          <table class="alerts-table">
-            <thead>
-              <tr>
-                <th>Dispositivo</th>
-                <th>pH</th>
-                <th>Temperatura</th>
-                <th>Conductividad</th>
-                <th>Estado de carga</th>
-                <th>Fecha</th>
-                <th>Hora</th>
-                <th>Telegram</th>
-                <th>Email</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in historyFilteredRows" :key="row.id">
-                <td>{{ row.deviceName }}</td>
-                <td>{{ row.ph }}</td>
-                <td>{{ row.temperature }}</td>
-                <td>{{ row.conductivity }}</td>
-                <td>{{ row.battery }}%</td>
-                <td>{{ row.date }}</td>
-                <td>{{ row.time }}</td>
-                <td>{{ row.telegramStatus }}</td>
-                <td>{{ row.emailStatus }}</td>
-              </tr>
-              <tr v-if="historyFilteredRows.length === 0">
-                <td colspan="9" class="empty-cell">No hay datos para los filtros seleccionados.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </main>
-  </div>
+  <EditDeviceModal
+    v-if="isAdmin"
+    :show="showDeviceConfigModal"
+    :device="selectedDevice"
+    :groups="deviceGroupStore.groups"
+    :on-submit="handleDeviceConfigSave"
+    @close="closeDeviceConfigModal"
+  />
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import DeviceList from './DeviceList.vue'
+import EditDeviceModal from './EditDeviceModal.vue'
 import DashboardLoadingOverlay from './DashboardLoadingOverlay.vue'
 import ThemeToggleButton from './ThemeToggleButton.vue'
 import SensorCard from './SensorCard.vue'
 import BatteryIndicator from './BatteryIndicator.vue'
 import WeatherCard from './WeatherCard.vue'
+import SensorChart from './historical/SensorChart.vue'
+import PdfExportModal from './historical/PdfExportModal.vue'
+import { useDeviceHistoricalCharts } from '../composables/useDeviceHistoricalCharts.js'
+import { useHistoricalExport } from '../composables/useHistoricalExport.js'
 import { useDeviceStore } from '../stores/deviceStore'
+import { useDeviceGroupStore } from '../stores/deviceGroupStore'
 import {
   mapApiDeviceToCard,
   mergeCardWithTelemetry,
@@ -703,10 +651,8 @@ import { checkAndSendAlerts } from '../services/AlertService.js'
 import { fetchDashboardData, fetchSensorHistory, IS_SIMULATED_MODE, DATA_MODE } from '../services/ArduinoConfig.js'
 import {
   createUserInSupabase,
-  fetchSupabaseAuthUsersForAdmin,
   deleteUserFromSupabase,
   getAlertLimitsByAdmin,
-  getCurrentUser,
 } from '../services/SupabaseAuthService.js'
 import { ensureSupabaseAdminSession } from '../services/supabaseSessionBridge.js'
 import {
@@ -715,11 +661,20 @@ import {
   hasValidSessionToken,
   isAdminRole,
   ADMIN_ONLY_VIEWS,
+  fetchOrganizationUsersForAdmin,
 } from '../services/sessionAuth.js'
 import { fetchAccountsActivity } from '../services/adminActivityService.js'
+import {
+  getActiveOrganizationName,
+  getApiAuthHeaders,
+  getSensorLimitsStorageKey,
+} from '../services/apiContext.js'
+import { resolveGroupAssignment, buildDeviceUpdatePayload } from '../utils/deviceGroupAssignment.js'
 
 const router = useRouter()
+const activeOrganizationName = computed(() => getActiveOrganizationName())
 const deviceStore = useDeviceStore()
+const deviceGroupStore = useDeviceGroupStore()
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 /** Telemetría en vivo por id de dispositivo (overlay sobre datos del API). */
@@ -885,7 +840,7 @@ const devices = computed(() => {
   const apiList = deviceStore.devices
 
   if (!apiList.length) {
-    if (IS_SIMULATED_MODE) {
+    if (IS_SIMULATED_MODE && !deviceStore.loading) {
       const card = buildDefaultSimulatedCard()
       return [mergeCardWithTelemetry(card, telemetryByDeviceId.value[card.id])]
     }
@@ -895,13 +850,19 @@ const devices = computed(() => {
   return apiList
     .filter((apiDevice) => apiDevice.active !== false)
     .map((apiDevice) => {
-      const card = mapApiDeviceToCard(apiDevice, { dataSource })
+      const card = mapApiDeviceToCard(apiDevice, {
+        dataSource,
+        groups: deviceGroupStore.groups,
+      })
       return mergeCardWithTelemetry(card, telemetryByDeviceId.value[card.id])
     })
 })
 
 const loadDevices = async () => {
-  await deviceStore.fetchDevices(`${API_BASE_URL}/api/devices`)
+  await Promise.all([
+    deviceStore.fetchDevices(`${API_BASE_URL}/api/devices`),
+    deviceGroupStore.fetchGroups(),
+  ])
 }
 
 const onDevicesChanged = async () => {
@@ -909,6 +870,33 @@ const onDevicesChanged = async () => {
   if (devices.value.length > 0 && !devices.value.some((d) => d.id === selectedDeviceId.value)) {
     selectedDeviceId.value = devices.value[0].id
   }
+}
+
+const loadSensorLimitsFromStorage = () => {
+  const savedConfig = localStorage.getItem(getSensorLimitsStorageKey())
+  if (!savedConfig) return
+  try {
+    const parsed = JSON.parse(savedConfig)
+    SENSOR_LIMITS_CONFIG.value = parsed
+    editingLimits.value = JSON.parse(savedConfig)
+  } catch (e) {
+    console.error('Error al cargar configuración guardada:', e)
+  }
+}
+
+const onOrganizationChanged = async () => {
+  selectedDeviceId.value = null
+  currentView.value = 'devices'
+  telemetryByDeviceId.value = {}
+  historyRecords.value = []
+  existingUsers.value = []
+  accountsActivity.value = []
+  stopUsersAutoRefresh()
+  stopChartsPolling()
+  deviceStore.reset()
+  deviceGroupStore.reset()
+  loadSensorLimitsFromStorage()
+  await onDevicesChanged()
 }
 
 const selectedDevice = computed(() => {
@@ -933,11 +921,41 @@ const sensors = computed(() => ({
 }))
 
 const historyRecords = ref([])
-const historyFilters = ref({
-  deviceId: 'all',
-  date: 'all'
-})
 const lastProcessedAlertTimestamp = ref(0)
+const showPdfModal = ref(false)
+const showDeviceConfigModal = ref(false)
+
+const selectedDeviceArduinoId = computed(() => {
+  const device = selectedDevice.value
+  if (!device?.id) return null
+  return device.telemetryQueryKey || device.telemetry_key || device.arduino_id || null
+})
+
+const {
+  phPeriod,
+  tempPeriod,
+  condPeriod,
+  chartData: deviceChartData,
+  chartStats: deviceChartStats,
+  initialLoading: chartsInitialLoading,
+  chartsRefreshing,
+  hasChartData: hasDeviceChartData,
+  isSimulatedMode: chartsSimulatedMode,
+  refreshCharts,
+  startPolling: startChartsPolling,
+  stopPolling: stopChartsPolling,
+} = useDeviceHistoricalCharts(selectedDeviceArduinoId, selectedDevice)
+
+const {
+  exportRows,
+  deviceOptions,
+  prepareExportRows,
+} = useHistoricalExport()
+
+async function openPdfModal() {
+  await prepareExportRows()
+  showPdfModal.value = true
+}
 
 const getStatus = (value, min, max) => {
   const percentage = ((value - min) / (max - min)) * 100
@@ -1058,27 +1076,6 @@ const createRecord = ({ ph, temperature, conductivity, timestamp }) => {
   }
 }
 
-const availableDates = computed(() => {
-  const uniqueDates = [...new Set(historyRecords.value.map((record) => record.date))]
-  return uniqueDates.sort((a, b) => {
-    const [da, ma, ya] = a.split('-').map(Number)
-    const [db, mb, yb] = b.split('-').map(Number)
-    return new Date(yb, mb - 1, db) - new Date(ya, ma - 1, da)
-  })
-})
-
-const historyFilteredRows = computed(() => {
-  return historyRecords.value
-    .filter((record) => {
-      const matchesDevice =
-        historyFilters.value.deviceId === 'all' ||
-        String(record.deviceId) === String(historyFilters.value.deviceId)
-      const matchesDate = historyFilters.value.date === 'all' || record.date === historyFilters.value.date
-      return matchesDevice && matchesDate
-    })
-    .sort((a, b) => b.timestamp - a.timestamp)
-})
-
 const todayString = computed(() => formatDate(new Date()))
 const todayAlerts = computed(() => {
   return historyRecords.value
@@ -1094,95 +1091,6 @@ const todayAlerts = computed(() => {
 const visibleAlerts = computed(() => {
   return showAllTodayAlerts.value ? todayAlerts.value : todayAlerts.value.slice(0, ALERT_TABLE_LIMIT)
 })
-
-const buildLineChartPoints = (rows, key, min, max) => {
-  const chartRows = rows.slice(0, 20).reverse()
-  if (chartRows.length < 2) return '0,100 320,100'
-  return chartRows.map((row, index) => {
-    const x = (index / (chartRows.length - 1)) * 320
-    const value = Number(row[key])
-    const normalized = (value - min) / (max - min)
-    const y = 110 - Math.max(0, Math.min(1, normalized)) * 100
-    return `${x.toFixed(2)},${y.toFixed(2)}`
-  }).join(' ')
-}
-
-const escapeHtml = (value) => {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;')
-}
-
-const downloadHistoryPdf = () => {
-  const groupedByDevice = historyFilteredRows.value.reduce((acc, row) => {
-    if (!acc[row.deviceName]) acc[row.deviceName] = []
-    acc[row.deviceName].push(row)
-    return acc
-  }, {})
-
-  const rowsHtml = Object.entries(groupedByDevice).map(([deviceName, rows]) => {
-    const tableRows = rows.map((row) => {
-      return `<tr>
-        <td>${escapeHtml(row.ph)}</td>
-        <td>${escapeHtml(row.temperature)}</td>
-        <td>${escapeHtml(row.conductivity)}</td>
-        <td>${escapeHtml(row.battery)}%</td>
-        <td>${escapeHtml(row.date)}</td>
-        <td>${escapeHtml(row.time)}</td>
-        <td>${escapeHtml(row.telegramStatus)}</td>
-        <td>${escapeHtml(row.emailStatus)}</td>
-      </tr>`
-    }).join('')
-    return `
-      <h2>${escapeHtml(deviceName)}</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>pH</th>
-            <th>Temperatura</th>
-            <th>Conductividad</th>
-            <th>Estado de carga</th>
-            <th>Fecha</th>
-            <th>Hora</th>
-            <th>Telegram</th>
-            <th>Email</th>
-          </tr>
-        </thead>
-        <tbody>${tableRows}</tbody>
-      </table>
-    `
-  }).join('')
-
-  const win = window.open('', '_blank')
-  if (!win) return
-  win.document.write(`
-    <html>
-      <head>
-        <title>Registro Historico</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 20px; color: #1f2937; }
-          h1 { margin-bottom: 8px; }
-          h2 { margin-top: 28px; margin-bottom: 8px; color: #2e7d32; }
-          p { margin-top: 0; color: #4b5563; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-          th, td { border: 1px solid #d1d5db; padding: 6px 8px; font-size: 12px; text-align: left; }
-          th { background: #f3f4f6; }
-        </style>
-      </head>
-      <body>
-        <h1>Registro Historico de Mediciones</h1>
-        <p>Filtro dispositivo: ${escapeHtml(historyFilters.value.deviceId === 'all' ? 'Todos' : selectedDevice.value.name)} | Filtro fecha: ${escapeHtml(historyFilters.value.date === 'all' ? 'Todas' : historyFilters.value.date)}</p>
-        ${rowsHtml || '<p>No hay datos para exportar.</p>'}
-      </body>
-    </html>
-  `)
-  win.document.close()
-  win.focus()
-  win.print()
-}
 
 const formatLastSync = (value) => {
   if (!value) return 'Sin datos del Arduino'
@@ -1238,7 +1146,9 @@ const loadDashboardFromApi = async () => {
   let dataSource = IS_SIMULATED_MODE ? 'simulated' : 'real'
   if (!IS_SIMULATED_MODE) {
     try {
-      const diagResponse = await fetch(`${API_BASE_URL}/api/diagnostics`)
+      const diagResponse = await fetch(`${API_BASE_URL}/api/diagnostics`, {
+        headers: getApiAuthHeaders(),
+      })
       if (diagResponse.ok) {
         const diag = await diagResponse.json()
         dataSource = diag.data_source || 'real'
@@ -1291,10 +1201,6 @@ const selectDevice = (device) => {
   showAllTodayAlerts.value = false
 }
 
-const openHistory = () => {
-  router.push('/historical')
-}
-
 const openAlertConfigView = () => {
   if (!isAdmin.value) return
   // Guardar desde donde vino el usuario
@@ -1306,7 +1212,9 @@ const openAlertConfigView = () => {
 
 const refreshSupabaseSessionState = async () => {
   const check = await ensureSupabaseAdminSession()
-  supabaseSessionWarning.value = check.ok ? '' : check.message
+  supabaseSessionWarning.value = check.ok
+    ? ''
+    : 'No se pudo validar la sesión de administrador. Cierra sesión e inicia de nuevo.'
   return check.ok
 }
 
@@ -1381,6 +1289,23 @@ const openAddDeviceFromDeviceList = () => {
   }
 }
 
+const openDeviceConfigModal = () => {
+  if (!isAdmin.value) return
+  showDeviceConfigModal.value = true
+}
+
+const closeDeviceConfigModal = () => {
+  showDeviceConfigModal.value = false
+}
+
+const handleDeviceConfigSave = async (deviceId, formPayload) => {
+  const assignment = await resolveGroupAssignment(formPayload.groupSelection, deviceGroupStore)
+  const updateBody = buildDeviceUpdatePayload(formPayload, assignment)
+  await deviceStore.updateDevice(deviceId, updateBody)
+  await deviceGroupStore.fetchGroups()
+  await onDevicesChanged()
+}
+
 const handleLogout = () => {
   stopSessionIdleWatcher()
   clearSession()
@@ -1410,7 +1335,7 @@ const saveAlertConfig = async (sensorType) => {
     SENSOR_LIMITS_CONFIG.value[sensorType] = JSON.parse(JSON.stringify(config))
 
     const configToSave = { ...SENSOR_LIMITS_CONFIG.value }
-    localStorage.setItem('sensorLimitsConfig', JSON.stringify(configToSave))
+    localStorage.setItem(getSensorLimitsStorageKey(), JSON.stringify(configToSave))
 
     hasUnsavedChanges.value = false
     lastSavedLimits = JSON.parse(JSON.stringify(SENSOR_LIMITS_CONFIG.value))
@@ -1428,9 +1353,14 @@ const createNewUser = async () => {
   const sanitizedEmail = String(newUser.value.email || '').trim().toLowerCase()
   const sanitizedFullName = String(newUser.value.fullName || '').trim()
 
-  // Validar campos
   if (!sanitizedEmail || !newUser.value.password || !sanitizedFullName) {
     userCreationError.value = 'Por favor completa todos los campos'
+    userCreationSuccess.value = ''
+    return
+  }
+
+  if (String(newUser.value.password).length < 6) {
+    userCreationError.value = 'La contrasena debe tener al menos 6 caracteres'
     userCreationSuccess.value = ''
     return
   }
@@ -1459,7 +1389,7 @@ const createNewUser = async () => {
 
     if (result.success) {
       userCreationSuccess.value =
-        `Usuario ${sanitizedEmail} creado en Supabase. Aparece en la lista como Pendiente hasta que confirme el correo; tras aceptar la invitación, pulsa Actualizar y pasará a Verificado.`
+        `Usuario ${sanitizedEmail} creado. Aparecerá como Pendiente hasta que confirme el correo; cuando lo haga, pulsa Actualizar y pasará a Verificado.`
       newUser.value = {
         email: '',
         password: '',
@@ -1486,7 +1416,7 @@ const loadExistingUsers = async () => {
   console.log('[loadExistingUsers] Iniciando carga...')
   try {
     await refreshSupabaseSessionState()
-    const result = await fetchSupabaseAuthUsersForAdmin()
+    const result = await fetchOrganizationUsersForAdmin()
     console.log('[loadExistingUsers] Resultado:', result)
 
     if (Array.isArray(result.users)) {
@@ -1515,14 +1445,14 @@ const loadExistingUsers = async () => {
 const deleteUser = async (userId) => {
   const target = existingUsers.value.find((u) => u.id === userId)
   const label = target?.email || userId
-  if (!confirm(`¿Eliminar permanentemente la cuenta ${label} en Supabase Auth?`)) {
+  if (!confirm(`¿Eliminar permanentemente la cuenta ${label}?`)) {
     return
   }
 
   try {
     const result = await deleteUserFromSupabase(userId)
     if (result.success) {
-      userCreationSuccess.value = `Cuenta ${label} eliminada de Supabase.`
+      userCreationSuccess.value = `Cuenta ${label} eliminada correctamente.`
       userCreationError.value = ''
       await loadExistingUsers()
     } else {
@@ -1596,9 +1526,15 @@ watch(currentView, (view) => {
 watch(
   () => ({ view: currentView.value, deviceId: selectedDeviceId.value }),
   async (current, previous) => {
-    if (current.view !== 'dashboard' || !current.deviceId) return
+    if (current.view !== 'dashboard' || !current.deviceId) {
+      stopChartsPolling()
+      return
+    }
     if (previous?.view === current.view && previous?.deviceId === current.deviceId) return
     await refreshDashboardView()
+    stopChartsPolling()
+    await refreshCharts({ full: true, reset: true })
+    startChartsPolling()
   },
   { flush: 'post' },
 )
@@ -1616,35 +1552,22 @@ onMounted(async () => {
 
   enforceAdminOnlyViews()
 
-  await loadDevices()
+  deviceStore.hydrateFromCache()
+  loadSensorLimitsFromStorage()
   selectedDeviceId.value = null
 
-  console.log('[FRONTEND] VITE_DATA_MODE:', DATA_MODE)
-
-  // Cargar configuración de 3 valores desde localStorage PRIMERO
-  const savedConfig = localStorage.getItem('sensorLimitsConfig')
-  if (savedConfig) {
-    try {
-      const parsed = JSON.parse(savedConfig)
-      SENSOR_LIMITS_CONFIG.value = parsed
-      editingLimits.value = JSON.parse(savedConfig)
-      console.log('✅ Configuración de rangos cargada desde localStorage:', SENSOR_LIMITS_CONFIG.value)
-    } catch (e) {
-      console.error('Error al cargar configuración guardada:', e)
-    }
-  }
-
-  // Iniciar actualizaciones de sensores DESPUÉS de cargar configuración
+  void loadDevices()
   startSensorUpdates()
 
   if (isAdmin.value) {
-    await loadExistingUsers()
+    void loadExistingUsers()
   }
 })
 
 onUnmounted(() => {
   stopSensorUpdates()
   stopUsersAutoRefresh()
+  stopChartsPolling()
 })
 </script>
 
@@ -2124,7 +2047,19 @@ onUnmounted(() => {
 .user-creation-form h3 {
   margin-top: 0;
   color: #333;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
+}
+
+.org-assign-hint {
+  margin: 0 0 16px;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.header-org-label {
+  margin: 4px 0 0;
+  font-weight: 600;
+  color: #2e7d32;
 }
 
 .form-grid {
@@ -2386,7 +2321,8 @@ onUnmounted(() => {
 
 .alerts-section,
 .filters-section,
-.charts-section {
+.charts-section,
+.historical-charts-section {
   margin-top: 28px;
   background: #ffffff;
   border-radius: 12px;
@@ -2403,6 +2339,61 @@ onUnmounted(() => {
 .weather-section {
   margin-bottom: 40px;
   margin-top: 40px;
+}
+
+.historical-charts-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.historical-charts-header .section-title {
+  margin-bottom: 0;
+}
+
+.historical-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(280px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.history-refresh-hint {
+  margin: 0 0 12px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: #e8f5e9;
+  color: #2e7d32;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.source-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.source-real {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.source-simulated {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+@media (max-width: 1100px) {
+  .historical-charts-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .alerts-section:has(.see-more-btn:disabled) .table-wrap,
@@ -2875,10 +2866,16 @@ html[data-theme='dark'] .info-card-value.user-role {
 
 html[data-theme='dark'] .alerts-section,
 html[data-theme='dark'] .filters-section,
-html[data-theme='dark'] .charts-section {
+html[data-theme='dark'] .charts-section,
+html[data-theme='dark'] .historical-charts-section {
   background: #262a36;
   border-color: #3d4254;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+}
+
+html[data-theme='dark'] .history-refresh-hint {
+  background: rgba(22, 101, 52, 0.35);
+  color: #bbf7d0;
 }
 
 html[data-theme='dark'] .alerts-count {

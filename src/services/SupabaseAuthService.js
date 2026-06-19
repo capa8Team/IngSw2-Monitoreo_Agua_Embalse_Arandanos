@@ -1,6 +1,14 @@
 import { createClient } from '@supabase/supabase-js'
 import { supabase, authService } from './supabaseClient'
 import { ensureSupabaseAdminSession } from './supabaseSessionBridge'
+import {
+  getActiveOrganizationId,
+  getActiveOrganizationSlug,
+} from './apiContext.js'
+import {
+  assignUserToOrganizationAdmin,
+  markPasswordSetupRequired,
+} from './sessionAuth.js'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -224,6 +232,65 @@ async function syncCreatedUserRole(userId, desiredRole) {
   return updateUserRole(userId, dbRole)
 }
 
+async function markUserMustSetPassword(userId) {
+  if (supabase) {
+    const { error } = await supabase
+      .from('users_roles')
+      .update({
+        must_set_password: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', userId)
+
+    if (!error) {
+      return { success: true }
+    }
+    console.warn('[markUserMustSetPassword] Supabase update:', error.message)
+  }
+
+  try {
+    await markPasswordSetupRequired(userId)
+    return { success: true }
+  } catch (markError) {
+    return {
+      success: false,
+      error: markError?.message || 'No se pudo marcar el usuario para primer acceso',
+    }
+  }
+}
+
+async function assignUserToActiveOrganization(userId, role) {
+  const organizationId = getActiveOrganizationId()
+  if (!organizationId) {
+    return {
+      success: false,
+      error:
+        'No se detectó la organización activa del dashboard. Cierra sesión e ingresa de nuevo.',
+    }
+  }
+
+  const orgRole = role === 'admin' ? 'admin' : 'employee'
+  try {
+    await assignUserToOrganizationAdmin({
+      userId,
+      organizationId,
+      orgRole,
+    })
+    return { success: true }
+  } catch (error) {
+    const rawMessage = String(error?.message || '')
+    if (/infinite recursion detected in policy for relation "user_organizations"/i.test(rawMessage)) {
+      return {
+        success: false,
+        error:
+          'Error de política RLS en user_organizations. Ejecuta FIX_USER_ORGANIZATIONS_RLS_RECURSION.sql en Supabase.',
+      }
+    }
+    console.error('Error assigning organization to user:', error)
+    return { success: false, error: rawMessage || 'No se pudo asignar la organización' }
+  }
+}
+
 /**
  * Crear un nuevo usuario en Supabase
  * @param {string} email 
@@ -260,13 +327,21 @@ export async function createUserInSupabase(email, password, fullName, role) {
     if (!password || String(password).length < 6) {
       return {
         success: false,
-        error: 'La contrasena debe tener al menos 6 caracteres.'
+        error: 'La contrasena debe tener al menos 6 caracteres.',
+      }
+    }
+
+    const activeOrganizationId = getActiveOrganizationId()
+    const activeOrganizationSlug = getActiveOrganizationSlug()
+    if (!activeOrganizationId) {
+      return {
+        success: false,
+        error:
+          'No se detectó la organización activa. Cierra sesión e ingresa de nuevo desde el dashboard de tu empresa.',
       }
     }
 
     const isolatedClient = createIsolatedAuthClient()
-
-    // 1. Crear usuario en Auth de Supabase sin cambiar la sesión del admin actual
     const { data: authData, error: authError } = await isolatedClient.auth.signUp({
       email: normalizedEmail,
       password,
@@ -274,6 +349,9 @@ export async function createUserInSupabase(email, password, fullName, role) {
         data: {
           full_name: normalizedFullName,
           role: normalizedRole,
+          must_set_password: true,
+          organization_id: activeOrganizationId,
+          organization_slug: activeOrganizationSlug || undefined,
         },
       },
     })
@@ -286,16 +364,18 @@ export async function createUserInSupabase(email, password, fullName, role) {
       if (/Email address .* is invalid/i.test(rawMessage)) {
         friendlyMessage = 'Correo invalido. Prueba con un correo real, por ejemplo nombre@empresa.com.'
       } else if (/already registered/i.test(rawMessage)) {
-        friendlyMessage = 'Ese correo ya esta registrado en Supabase.'
+        friendlyMessage =
+          'Ese correo ya está registrado. No lo vuelvas a crear: confirma el correo anterior o elimínalo en Supabase.'
       } else if (/email rate limit exceeded/i.test(rawMessage)) {
-        friendlyMessage = 'Supabase bloqueo temporalmente nuevos registros por limite de envios. Espera unos minutos e intenta otra vez.'
+        friendlyMessage =
+          'Supabase bloqueó temporalmente nuevos registros por límite de envíos de correo. Espera entre 15 y 60 minutos e intenta de nuevo.'
       } else if (/infinite recursion detected in policy for relation "users_roles"/i.test(rawMessage)) {
         friendlyMessage = 'Error de politica RLS en users_roles (recursion). Debes aplicar el script FIX_USERS_ROLES_RLS_RECURSION.sql en Supabase.'
       }
 
       return {
         success: false,
-        error: friendlyMessage || 'Error al crear usuario en autenticacion'
+        error: friendlyMessage || 'Error al crear usuario en autenticacion',
       }
     }
 
@@ -303,7 +383,7 @@ export async function createUserInSupabase(email, password, fullName, role) {
     if (!userId) {
       return {
         success: false,
-        error: 'No se pudo obtener el ID del usuario creado'
+        error: 'No se pudo obtener el ID del usuario creado',
       }
     }
 
@@ -316,9 +396,29 @@ export async function createUserInSupabase(email, password, fullName, role) {
       }
     }
 
+    const orgAssign = await assignUserToActiveOrganization(userId, normalizedRole)
+    if (!orgAssign.success) {
+      return {
+        success: false,
+        error: orgAssign.error || 'Usuario creado pero no se pudo asignar a la organización activa',
+        userId,
+      }
+    }
+
+    const marked = await markUserMustSetPassword(userId)
+    if (!marked.success) {
+      return {
+        success: false,
+        error:
+          marked.error ||
+          'Usuario creado pero no se pudo registrar el cambio de contraseña obligatorio. Contacta al administrador.',
+        userId,
+      }
+    }
+
     return {
       success: true,
-      userId
+      userId,
     }
   } catch (error) {
     console.error('Exception in createUserInSupabase:', error)

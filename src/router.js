@@ -4,11 +4,11 @@ import {
   tryRenewAccessToken,
   clearSession,
 } from './services/sessionAuth.js'
+import { syncOrganizationContextFromAccessToken } from './services/apiContext.js'
 
 // Importación lazy de vistas
 const Login = () => import('./views/Login.vue')
 const DeviceDashboard = () => import('./components/DeviceDashboard.vue')
-const HistoricalData = () => import('./views/HistoricalData.vue')
 
 const routes = [
   {
@@ -28,18 +28,6 @@ const routes = [
     name: 'Dashboard',
     component: DeviceDashboard,
     meta: { title: 'Dashboard' },
-  },
-
-  // Datos históricos - Accesible para empleado y administrador
-  {
-    path: '/historical',
-    name: 'HistoricalData',
-    component: HistoricalData,
-    meta: { 
-      title: 'Datos Históricos',
-      requiresAuth: true,
-      roles: ['empleado', 'administrador']
-    },
   },
 
   // Catch-all para rutas no encontradas
@@ -79,12 +67,17 @@ router.beforeEach(async (to, from, next) => {
     return
   }
 
+  if (to.path === '/dashboard') {
+    void import('./components/DeviceDashboard.vue')
+  }
+
   const renewed = await tryRenewAccessToken()
   if (!renewed) {
     clearSession()
     next('/login')
     return
   }
+  syncOrganizationContextFromAccessToken()
 
   if (to.meta.roles && to.meta.roles.length > 0) {
     const userRole = localStorage.getItem('userRole')

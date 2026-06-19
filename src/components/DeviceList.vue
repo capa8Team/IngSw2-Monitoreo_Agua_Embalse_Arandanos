@@ -4,10 +4,15 @@
       <ThemeToggleButton />
       <div class="header-content">
         <h1 class="header-title"> QAwa - Dispositivos Conectados</h1>
+        <p v-if="activeOrganizationName" class="org-context-label">
+          Organización: {{ activeOrganizationName }}
+        </p>
         <p class="header-subtitle">Selecciona un Arduino para ver las mediciones en tiempo real</p>
       </div>
       
       <div class="view-controls">
+        <OrganizationSwitcher @organization-changed="$emit('organization-changed')" />
+
         <button 
           class="view-btn grid-view"
           :class="{ active: viewMode === 'grid' }"
@@ -31,6 +36,17 @@
         </button>
 
         <button
+          class="view-btn map-view"
+          :class="{ active: viewMode === 'map' }"
+          @click="viewMode = 'map'"
+          title="Vista de mapa"
+        >
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+          </svg>
+        </button>
+
+        <button
           v-if="isAdmin"
           class="admin-btn"
           @click="$emit('open-user-management')"
@@ -49,11 +65,12 @@
         </button>
 
         <button
-          class="history-btn"
-          @click="$emit('open-history')"
-          title="Abrir registro histórico"
+          v-if="isAdmin"
+          class="pdf-export-btn"
+          @click="$emit('open-pdf-export')"
+          title="Descargar reporte PDF"
         >
-          Registro Histórico
+          Descargar PDF
         </button>
 
         <button
@@ -76,20 +93,35 @@
         @devices-changed="$emit('devices-changed')"
       />
 
-      <div class="devices-grid" :class="`view-${viewMode}`">
+      <div v-if="isLoadingDevices" class="loading-state" role="status" aria-live="polite" aria-busy="true">
+        <div class="devices-loading-spinner" aria-hidden="true"></div>
+        <p class="loading-text">Cargando dispositivos…</p>
+      </div>
+
+      <div v-else-if="viewMode === 'map'" class="map-section">
+        <DeviceMap
+          :devices="devicesData"
+          :groups="deviceGroups"
+          @select-device="selectDevice"
+        />
+      </div>
+
+      <div v-else class="devices-grid" :class="`view-${viewMode}`">
         <DeviceCard
           v-for="device in devicesData"
           :key="device.id"
           :device="device"
           :is-selected="selectedDeviceId === device.id"
           :can-delete="isAdmin"
+          :can-configure="isAdmin"
           :deleting="deletingDeviceId === device.id"
           @select="selectDevice(device)"
           @delete="handleDeleteDevice"
+          @configure="openEditModal(device)"
         />
       </div>
 
-      <div v-if="devicesData.length === 0" class="empty-state">
+      <div v-if="!isLoadingDevices && devicesData.length === 0" class="empty-state">
         <div class="empty-icon">
           <svg viewBox="0 0 24 24" width="64" height="64" fill="currentColor">
             <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5-4h-2v2h2v-2zm0-4h-2v2h2V7z"/>
@@ -98,20 +130,45 @@
         <p class="empty-text">No hay dispositivos conectados</p>
       </div>
     </main>
+
+    <EditDeviceModal
+      v-if="isAdmin"
+      :show="showEditModal"
+      :device="editingDevice"
+      :groups="deviceGroups"
+      :on-submit="handleEditDevice"
+      @close="closeEditModal"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref, onMounted } from 'vue'
+import { getActiveOrganizationName } from '../services/apiContext.js'
 import DeviceCard from './DeviceCard.vue'
+import DeviceMap from './DeviceMap.vue'
+import EditDeviceModal from './EditDeviceModal.vue'
 import ThemeToggleButton from './ThemeToggleButton.vue'
 import AdminDevicesSection from './AdminDevicesSection.vue'
+import OrganizationSwitcher from './OrganizationSwitcher.vue'
 import { useDeviceStore } from '../stores/deviceStore'
+import { useDeviceGroupStore } from '../stores/deviceGroupStore'
+import { resolveGroupAssignment, buildDeviceUpdatePayload } from '../utils/deviceGroupAssignment.js'
+
+const activeOrganizationName = computed(() => getActiveOrganizationName())
 
 const viewMode = ref('grid')
 const selectedDeviceId = ref(null)
 const deletingDeviceId = ref(null)
+const showEditModal = ref(false)
+const editingDevice = ref(null)
 const deviceStore = useDeviceStore()
+const deviceGroupStore = useDeviceGroupStore()
+const deviceGroups = computed(() => deviceGroupStore.groups)
+
+onMounted(() => {
+  void deviceGroupStore.fetchGroups()
+})
 
 const props = defineProps({
   devicesData: {
@@ -123,6 +180,10 @@ const props = defineProps({
     default: false
   }
 })
+
+const isLoadingDevices = computed(
+  () => deviceStore.loading && props.devicesData.length === 0,
+)
 
 const selectDevice = (device) => {
   selectedDeviceId.value = device.id
@@ -150,13 +211,32 @@ const handleDeleteDevice = async (device) => {
   }
 }
 
+const openEditModal = (device) => {
+  editingDevice.value = device
+  showEditModal.value = true
+}
+
+const closeEditModal = () => {
+  showEditModal.value = false
+  editingDevice.value = null
+}
+
+const handleEditDevice = async (deviceId, formPayload) => {
+  const assignment = await resolveGroupAssignment(formPayload.groupSelection, deviceGroupStore)
+  const updateBody = buildDeviceUpdatePayload(formPayload, assignment)
+  await deviceStore.updateDevice(deviceId, updateBody)
+  await deviceGroupStore.fetchGroups()
+  emit('devices-changed')
+}
+
 const emit = defineEmits([
   'select-device',
-  'open-history',
+  'open-pdf-export',
   'open-user-management',
   'open-account-activity',
   'logout',
   'add-device',
+  'organization-changed',
   'devices-changed',
 ])
 </script>
@@ -187,6 +267,13 @@ const emit = defineEmits([
   font-weight: 700;
   color: #222;
   letter-spacing: -0.5px;
+}
+
+.org-context-label {
+  margin: 6px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #2e7d32;
 }
 
 .header-subtitle {
@@ -224,20 +311,22 @@ const emit = defineEmits([
   color: #764ba2;
 }
 
-.history-btn {
-  border: 1px solid #66bb6a;
-  background: #ffffff;
-  color: #2e7d32;
+.pdf-export-btn {
+  border: none;
+  background: #66bb6a;
+  color: #ffffff;
   border-radius: 6px;
-  padding: 0 14px;
+  padding: 0 16px;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(102, 187, 106, 0.25);
 }
 
-.history-btn:hover {
-  background: #e8f5e9;
+.pdf-export-btn:hover {
+  background: #558a5a;
+  transform: translateY(-1px);
 }
 
 .logout-btn {
@@ -318,6 +407,42 @@ const emit = defineEmits([
   grid-template-columns: 1fr;
 }
 
+.map-section {
+  margin-bottom: 24px;
+}
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 40px;
+  text-align: center;
+  color: #2e7d32;
+}
+
+.devices-loading-spinner {
+  width: 44px;
+  height: 44px;
+  border: 3px solid #e8f5e9;
+  border-top-color: #66bb6a;
+  border-radius: 50%;
+  animation: devices-loading-spin 0.85s linear infinite;
+  margin-bottom: 16px;
+}
+
+.loading-text {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+@keyframes devices-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -380,7 +505,7 @@ const emit = defineEmits([
     justify-content: center;
   }
 
-  .history-btn {
+  .pdf-export-btn {
     height: 36px;
   }
 
@@ -517,14 +642,13 @@ html[data-theme='dark'] .admin-btn:hover {
   color: #ffedd5;
 }
 
-html[data-theme='dark'] .history-btn {
-  background: #262a36;
-  border-color: #4ade80;
-  color: #bbf7d0;
+html[data-theme='dark'] .pdf-export-btn {
+  background: #4ade80;
+  color: #052e16;
 }
 
-html[data-theme='dark'] .history-btn:hover {
-  background: #1e3a2a;
+html[data-theme='dark'] .pdf-export-btn:hover {
+  background: #86efac;
 }
 
 html[data-theme='dark'] .logout-btn {
@@ -535,6 +659,15 @@ html[data-theme='dark'] .logout-btn {
 
 html[data-theme='dark'] .logout-btn:hover {
   background: #3f1d1d;
+}
+
+html[data-theme='dark'] .loading-state {
+  color: #81c784;
+}
+
+html[data-theme='dark'] .devices-loading-spinner {
+  border-color: #1b3d1f;
+  border-top-color: #66bb6a;
 }
 
 html[data-theme='dark'] .empty-state {

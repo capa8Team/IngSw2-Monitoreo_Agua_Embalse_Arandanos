@@ -9,6 +9,7 @@
       <div class="device-info">
         <h3 class="device-name">{{ device.name }}</h3>
         <p class="device-model">{{ device.model }}</p>
+        <p v-if="device.group_name" class="device-group-badge">📍 {{ device.group_name }}</p>
       </div>
       <div class="device-status">
         <span class="status-badge" :class="`status-${device.status}`">
@@ -68,16 +69,27 @@
 
     <div class="device-footer">
       <p class="last-update">Última actualización: {{ device.lastUpdate }}</p>
-      <button
-        v-if="canDelete"
-        type="button"
-        class="delete-device-btn"
-        title="Eliminar dispositivo"
-        :disabled="deleting"
-        @click.stop="$emit('delete', device)"
-      >
-        {{ deleting ? '…' : 'Eliminar' }}
-      </button>
+      <div class="footer-actions">
+        <button
+          v-if="canConfigure"
+          type="button"
+          class="configure-device-btn"
+          title="Configurar dispositivo"
+          @click.stop="$emit('configure', device)"
+        >
+          Configurar
+        </button>
+        <button
+          v-if="canDelete"
+          type="button"
+          class="delete-device-btn"
+          title="Eliminar dispositivo"
+          :disabled="deleting"
+          @click.stop="$emit('delete', device)"
+        >
+          {{ deleting ? '…' : 'Eliminar' }}
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -85,6 +97,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import BatteryIndicator from './BatteryIndicator.vue'
+import { getApiAuthHeaders } from '../services/apiContext.js'
 
 const props = defineProps({
   device: {
@@ -99,13 +112,17 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
+  canConfigure: {
+    type: Boolean,
+    default: false
+  },
   deleting: {
     type: Boolean,
     default: false
   }
 })
 
-defineEmits(['select', 'delete'])
+defineEmits(['select', 'delete', 'configure'])
 
 const weatherData = ref(null)
 const weatherLoading = ref(false)
@@ -162,7 +179,9 @@ const fetchWeather = async () => {
 
   try {
     const apiUrl = import.meta.env.VITE_API_URL || ''
-    const response = await fetch(`${apiUrl}/api/devices/weather/${encodeURIComponent(props.device.city)}`)
+    const response = await fetch(`${apiUrl}/api/devices/weather/${encodeURIComponent(props.device.city)}`, {
+      headers: getApiAuthHeaders(),
+    })
     
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)
@@ -247,6 +266,13 @@ watch(() => props.device?.city, () => {
   color: #888;
 }
 
+.device-group-badge {
+  margin: 4px 0 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: #c62828;
+}
+
 .device-status {
   flex-shrink: 0;
 }
@@ -262,6 +288,29 @@ watch(() => props.device?.city, () => {
   font-weight: 600;
   cursor: pointer;
   transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.configure-device-btn {
+  flex-shrink: 0;
+  border: 1px solid #90caf9;
+  background: #fff;
+  color: #1565c0;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.configure-device-btn:hover {
+  background: #e3f2fd;
+}
+
+.footer-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .delete-device-btn:hover:not(:disabled) {

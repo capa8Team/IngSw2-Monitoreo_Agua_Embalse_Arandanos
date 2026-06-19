@@ -17,18 +17,25 @@ export function mapApiStatusToCard(status) {
   return 'disconnected'
 }
 
-export function mapApiDeviceToCard(apiDevice, { dataSource = 'real' } = {}) {
+export function mapApiDeviceToCard(apiDevice, { dataSource = 'real', groups = [] } = {}) {
   const id = apiDevice.id ?? apiDevice._id
   const deviceType = apiDevice.device_type || 'ESP8266'
   const label = DEVICE_TYPE_LABELS[deviceType] || deviceType
   const location = apiDevice.location ? ` — ${apiDevice.location}` : ''
+  const group = groups.find((g) => g.id === apiDevice.group_id)
+  const groupLabel = group ? ` · ${group.name}` : ''
 
   return {
     id,
     name: apiDevice.name || 'Dispositivo sin nombre',
-    model: `${label}${location}`,
+    model: `${label}${location}${groupLabel}`,
     device_type: deviceType,
     location: apiDevice.location || '',
+    city: apiDevice.city || '',
+    group_id: apiDevice.group_id || null,
+    group_name: group?.name || null,
+    latitude: apiDevice.latitude ?? null,
+    longitude: apiDevice.longitude ?? null,
     arduino_id: apiDevice.arduino_id || null,
     telemetry_key: apiDevice.telemetry_key || null,
     telemetryQueryKey: getDeviceTelemetryKeys(apiDevice)[0] || null,
