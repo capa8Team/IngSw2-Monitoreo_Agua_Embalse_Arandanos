@@ -115,6 +115,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { getApiAuthHeaders } from '../services/apiContext.js'
+import { writeSimulatedDeviceOverrides } from '../utils/simulatedDeviceStorage.js'
 
 const props = defineProps({
   deviceId: {
@@ -124,6 +125,10 @@ const props = defineProps({
   city: {
     type: String,
     default: ''
+  },
+  isSimulated: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -195,17 +200,29 @@ const openCityEditor = () => {
 }
 
 const saveCity = async () => {
-  if (!cityInput.value.trim() || !props.deviceId) return
+  if (!cityInput.value.trim()) return
 
   savingCity.value = true
   error.value = null
 
   try {
+    const city = cityInput.value.trim()
+
+    if (props.isSimulated) {
+      writeSimulatedDeviceOverrides({ city })
+      showCitySetup.value = false
+      emit('city-updated')
+      await fetchWeatherData(city)
+      return
+    }
+
+    if (!props.deviceId) return
+
     const apiUrl = import.meta.env.VITE_API_URL || ''
     const response = await fetch(`${apiUrl}/api/devices/${props.deviceId}`, {
       method: 'PUT',
       headers: getApiAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ city: cityInput.value.trim() })
+      body: JSON.stringify({ city })
     })
 
     if (!response.ok) {
@@ -215,7 +232,7 @@ const saveCity = async () => {
 
     showCitySetup.value = false
     emit('city-updated')
-    await fetchWeatherData(cityInput.value.trim())
+    await fetchWeatherData(city)
   } catch (err) {
     error.value = err.message || 'No se pudo guardar la ciudad'
     console.error('Error saving city:', err)
@@ -241,7 +258,14 @@ const fetchWeatherData = async (cityOverride = null) => {
     const apiUrl = import.meta.env.VITE_API_URL || ''
     const url = cityToQuery
       ? `${apiUrl}/api/devices/weather/${encodeURIComponent(cityToQuery)}`
-      : `${apiUrl}/api/devices/${props.deviceId}/weather`
+      : (!props.isSimulated && props.deviceId
+        ? `${apiUrl}/api/devices/${props.deviceId}/weather`
+        : null)
+
+    if (!url) {
+      showCitySetup.value = true
+      return
+    }
 
     const response = await fetch(url, {
       headers: getApiAuthHeaders({ 'Content-Type': 'application/json' }),

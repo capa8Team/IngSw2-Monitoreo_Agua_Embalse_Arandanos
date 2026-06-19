@@ -81,6 +81,10 @@ export function buildSimulatedHistoricalReadings({
 
   for (let t = endMs; t >= startMs && readings.length < limit; t -= stepMs) {
     const sample = generateSyntheticReading(t)
+    const idx = readings.length
+    if (idx % 24 === 0) sample.ph = 9.1
+    else if (idx % 24 === 8) sample.temperature = 33.5
+    else if (idx % 24 === 16) sample.conductivity = 1850
     readings.push({
       device: SIMULATED_HISTORICAL_DEVICE,
       timestamp: new Date(sample.timestamp),

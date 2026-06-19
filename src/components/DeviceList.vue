@@ -154,6 +154,10 @@ import OrganizationSwitcher from './OrganizationSwitcher.vue'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useDeviceGroupStore } from '../stores/deviceGroupStore'
 import { resolveGroupAssignment, buildDeviceUpdatePayload } from '../utils/deviceGroupAssignment.js'
+import {
+  isSimulatedDeviceId,
+  saveSimulatedDeviceFromForm,
+} from '../utils/simulatedDeviceStorage.js'
 
 const activeOrganizationName = computed(() => getActiveOrganizationName())
 
@@ -222,6 +226,11 @@ const closeEditModal = () => {
 }
 
 const handleEditDevice = async (deviceId, formPayload) => {
+  if (isSimulatedDeviceId(deviceId)) {
+    await saveSimulatedDeviceFromForm(formPayload, deviceGroupStore)
+    emit('devices-changed')
+    return
+  }
   const assignment = await resolveGroupAssignment(formPayload.groupSelection, deviceGroupStore)
   const updateBody = buildDeviceUpdatePayload(formPayload, assignment)
   await deviceStore.updateDevice(deviceId, updateBody)

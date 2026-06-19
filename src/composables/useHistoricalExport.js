@@ -5,6 +5,7 @@ import {
   IS_SIMULATED_MODE,
 } from '../services/historicalDataService.js'
 import { useDeviceStore } from '../stores/deviceStore.js'
+import { getSimulatedExportDevice } from '../utils/simulatedDeviceStorage.js'
 
 /** Exportación PDF global (todos los dispositivos de la organización). */
 export function useHistoricalExport() {
@@ -21,6 +22,11 @@ export function useHistoricalExport() {
   )
 
   async function loadRegisteredDevices() {
+    if (IS_SIMULATED_MODE) {
+      registeredDevices.value = [getSimulatedExportDevice()]
+      return
+    }
+
     if (!deviceStore.devices.length) {
       deviceStore.hydrateFromCache()
     }
