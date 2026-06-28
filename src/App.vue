@@ -5,13 +5,19 @@
 <script setup>
 import { onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
-import { hasValidSessionToken, startSessionIdleWatcher, stopSessionIdleWatcher } from './services/sessionAuth.js'
+import {
+  hasValidSessionToken,
+  sanitizeSessionState,
+  startSessionIdleWatcher,
+  stopSessionIdleWatcher,
+} from './services/sessionAuth.js'
 import { initTheme } from './services/themePreference.js'
 
 const router = useRouter()
 
 onMounted(() => {
   initTheme()
+  sanitizeSessionState()
   if (hasValidSessionToken()) {
     startSessionIdleWatcher(router)
   }

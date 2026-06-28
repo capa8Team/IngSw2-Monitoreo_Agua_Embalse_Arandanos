@@ -2,17 +2,24 @@ import { createCorrelationId, appLogger } from '../utils/logger.js'
 import { getApiAuthHeaders, notifyOrganizationChanged } from './apiContext.js'
 import { clearSupabaseSession } from './supabaseSessionBridge.js'
 import { supabase } from './supabaseClient.js'
+import {
+  clearAllAuthStorage,
+  getAccessToken,
+  getAuthItem,
+  hydrateSessionFromRememberMe,
+  isRememberMeEnabled,
+  persistAuthFields,
+  removeAuthItem,
+  setAuthItem,
+} from './authStorage.js'
 
 /**
- * Access JWT: 30 min solo administrador; empleado con validez mayor (config en API).
- * Refresh JWT: administrador y empleado; se usa en POST /api/auth/refresh.
- * Inactividad 30 min: solo aplica cierre de sesión al rol administrador.
+ * Access JWT: 30 min administrador; empleado con validez mayor (config en API).
+ * Refresh JWT: ambos roles; POST /api/auth/refresh.
+ * Inactividad 30 min: aplica a todos los roles.
+ * Sesión en sessionStorage; localStorage solo si el usuario marca «Recordarme».
  */
 
-/**
- * Vacío = rutas relativas (/api/...), p. ej. detrás de nginx en Docker.
- * Si defines VITE_API_URL, debe ser alcanzable desde el navegador (p. ej. http://localhost:8000).
- */
 function resolvePublicApiBase() {
   const raw = import.meta.env.VITE_API_URL
   if (raw === undefined || raw === null || String(raw).trim() === '') return ''
@@ -30,6 +37,7 @@ let lastActivityAt = Date.now()
 let lastThrottleMark = 0
 let routerRef = null
 let tickIntervalId = null
+
 const activityHandler = () => {
   const now = Date.now()
   if (now - lastThrottleMark < ACTIVITY_THROTTLE_MS) return
@@ -54,25 +62,50 @@ export function getJwtExpMs(token) {
 }
 
 function isAccessTokenValid() {
-  const at = localStorage.getItem('access_token')
+  const at = getAuthItem('access_token')
   return !!(at && getJwtExpMs(at) > Date.now() + 2000)
 }
 
 function isRefreshTokenValid() {
-  const rt = localStorage.getItem('refresh_token')
+  const rt = getAuthItem('refresh_token')
   return !!(rt && getJwtExpMs(rt) > Date.now() + 2000)
 }
 
-/** Sesión iniciada y al menos un token (access o refresh) vigente. */
+export function sanitizeSessionState() {
+  hydrateSessionFromRememberMe()
+
+  const flagged = getAuthItem('isAuthenticated') === 'true'
+  const at = getAuthItem('access_token')
+  const rt = getAuthItem('refresh_token')
+  const hasAnyToken = !!(at || rt)
+
+  if (flagged && !hasAnyToken) {
+    clearSession()
+    return
+  }
+  if (!flagged && hasAnyToken) {
+    clearSession()
+    return
+  }
+  if (flagged && hasAnyToken && !isAccessTokenValid() && !isRefreshTokenValid()) {
+    clearSession()
+  }
+}
+
 export function hasValidSessionToken() {
-  if (localStorage.getItem('isAuthenticated') !== 'true') return false
+  sanitizeSessionState()
+  if (getAuthItem('isAuthenticated') !== 'true') return false
+  const at = getAuthItem('access_token')
+  const rt = getAuthItem('refresh_token')
+  if (!at && !rt) {
+    clearSession()
+    return false
+  }
   return isAccessTokenValid() || isRefreshTokenValid()
 }
 
-function persistOrganizationContext(data) {
+function buildOrganizationFields(data) {
   const orgs = Array.isArray(data.organizations) ? data.organizations : []
-  localStorage.setItem('userOrganizations', JSON.stringify(orgs))
-
   let activeId = data.organization_id || null
   if (activeId && !orgs.some((o) => o.id === activeId)) {
     activeId = null
@@ -80,24 +113,38 @@ function persistOrganizationContext(data) {
   if (!activeId && orgs[0]?.id) {
     activeId = orgs[0].id
   }
-  if (activeId) {
-    localStorage.setItem('activeOrganizationId', activeId)
-  } else {
-    localStorage.removeItem('activeOrganizationId')
+  return {
+    userOrganizations: JSON.stringify(orgs),
+    activeOrganizationId: activeId || '',
   }
 }
 
-export function persistSession(data) {
-  localStorage.setItem('access_token', data.access_token)
-  if (data.refresh_token) {
-    localStorage.setItem('refresh_token', data.refresh_token)
-  }
-  localStorage.setItem('isAuthenticated', 'true')
-  localStorage.setItem('userRole', data.role)
-  localStorage.setItem('userEmail', data.email || '')
-  persistOrganizationContext(data)
+export function persistSession(data, rememberMe = false) {
+  const orgFields = buildOrganizationFields(data)
+  persistAuthFields(
+    {
+      access_token: data.access_token,
+      refresh_token: data.refresh_token || '',
+      isAuthenticated: 'true',
+      userRole: data.role || '',
+      userEmail: data.email || '',
+      userOrganizations: orgFields.userOrganizations,
+      activeOrganizationId: orgFields.activeOrganizationId,
+    },
+    rememberMe,
+  )
   lastActivityAt = Date.now()
   lastThrottleMark = Date.now()
+}
+
+function persistOrganizationContext(data) {
+  const orgFields = buildOrganizationFields(data)
+  setAuthItem('userOrganizations', orgFields.userOrganizations)
+  if (orgFields.activeOrganizationId) {
+    setAuthItem('activeOrganizationId', orgFields.activeOrganizationId)
+  } else {
+    removeAuthItem('activeOrganizationId')
+  }
 }
 
 const FIRST_ACCESS_AT_KEY = 'first_access_supabase_at'
@@ -154,13 +201,7 @@ async function ensureSupabaseSessionForPasswordChange(email, currentPassword) {
 }
 
 export function clearSession() {
-  localStorage.removeItem('access_token')
-  localStorage.removeItem('refresh_token')
-  localStorage.removeItem('isAuthenticated')
-  localStorage.removeItem('userEmail')
-  localStorage.removeItem('userRole')
-  localStorage.removeItem('userOrganizations')
-  localStorage.removeItem('activeOrganizationId')
+  clearAllAuthStorage()
   clearFirstAccessSupabaseSession()
   clearSupabaseSession()
 }
@@ -178,7 +219,6 @@ export function isAdminRole(role) {
   return r === 'administrador' || r === 'admin'
 }
 
-/** Vistas internas del dashboard reservadas a administradores. */
 export const ADMIN_ONLY_VIEWS = new Set(['admin-users', 'admin-activity', 'admin-alerts'])
 
 function mapSupabaseLoginError(message) {
@@ -232,7 +272,6 @@ async function completePasswordSetupOnBackend(email, accessToken) {
   return body
 }
 
-/** Indica si el correo debe definir contraseña en su primer acceso. */
 export async function checkFirstAccess(email) {
   const normalizedEmail = String(email || '').trim().toLowerCase()
   const res = await fetch(`${API_URL}/api/auth/first-access/check`, {
@@ -252,7 +291,6 @@ export async function checkFirstAccess(email) {
   return !!body.requires_password_setup
 }
 
-/** Lista usuarios de la organización activa (solo admin de esa org). */
 export async function fetchOrganizationUsersForAdmin() {
   await tryRenewAccessToken()
   const res = await fetch(`${API_URL}/api/auth/admin/organization-users`, {
@@ -287,10 +325,9 @@ export async function fetchOrganizationUsersForAdmin() {
   }
 }
 
-/** Asigna usuario a organización vía API (solo administrador autenticado). */
 export async function assignUserToOrganizationAdmin({ userId, organizationId, orgRole = 'employee' }) {
   await tryRenewAccessToken()
-  const token = localStorage.getItem('access_token')
+  const token = getAccessToken()
   if (!token) {
     throw new Error('Sesión de administrador no válida')
   }
@@ -316,10 +353,9 @@ export async function assignUserToOrganizationAdmin({ userId, organizationId, or
   return body
 }
 
-/** Marca cuenta recién creada para primer acceso (solo administrador autenticado). */
 export async function markPasswordSetupRequired(userId) {
   await tryRenewAccessToken()
-  const token = localStorage.getItem('access_token')
+  const token = getAccessToken()
   if (!token) {
     throw new Error('Sesión de administrador no válida')
   }
@@ -341,7 +377,6 @@ export async function markPasswordSetupRequired(userId) {
   return body
 }
 
-/** Envía código OTP al correo (primer acceso sin contraseña conocida). */
 export async function sendFirstAccessOtp(email) {
   if (!supabase) {
     throw new Error('Supabase no está configurado en el cliente')
@@ -356,9 +391,6 @@ export async function sendFirstAccessOtp(email) {
   }
 }
 
-/**
- * Verifica OTP, define contraseña en Supabase Auth y emite sesión JWT de la app.
- */
 export async function completeFirstAccessWithOtp({ email, otp, password }) {
   if (!supabase) {
     throw new Error('Supabase no está configurado en el cliente')
@@ -393,10 +425,6 @@ export async function completeFirstAccessWithOtp({ email, otp, password }) {
   return completePasswordSetupOnBackend(normalizedEmail, freshToken)
 }
 
-/**
- * Define contraseña cuando ya hay sesión Supabase (p. ej. contraseña temporal conocida).
- * currentPassword: contraseña con la que acaba de iniciar sesión (restaura sesión si se perdió).
- */
 export async function completeFirstAccessWithSession(email, password, currentPassword) {
   if (!supabase) {
     throw new Error('Supabase no está configurado en el cliente')
@@ -444,11 +472,6 @@ async function loginViaBackendPassword(email, password) {
   return body
 }
 
-/**
- * 1) Supabase signInWithPassword (misma vía que al crear usuarios)
- * 2) Intercambio por JWT de la app en POST /api/auth/session
- * 3) Respaldo: POST /api/auth/login si Supabase no está configurado en el cliente
- */
 export async function apiLogin(email, password) {
   const normalizedEmail = String(email || '').trim().toLowerCase()
 
@@ -481,9 +504,8 @@ export async function apiLogin(email, password) {
   return session
 }
 
-/** Renueva access (y refresh rotado) usando el refresh token. */
 export async function apiRefresh() {
-  const refreshToken = localStorage.getItem('refresh_token')
+  const refreshToken = getAuthItem('refresh_token')
   if (!refreshToken) return false
   const res = await fetch(`${API_URL}/api/auth/refresh`, {
     method: 'POST',
@@ -493,17 +515,16 @@ export async function apiRefresh() {
   if (!res.ok) return false
   const data = await res.json().catch(() => null)
   if (!data?.access_token || !data?.refresh_token) return false
-  localStorage.setItem('access_token', data.access_token)
-  localStorage.setItem('refresh_token', data.refresh_token)
-  if (data.role) localStorage.setItem('userRole', data.role)
-  if (data.email) localStorage.setItem('userEmail', data.email)
+  setAuthItem('access_token', data.access_token)
+  setAuthItem('refresh_token', data.refresh_token)
+  if (data.role) setAuthItem('userRole', data.role)
+  if (data.email) setAuthItem('userEmail', data.email)
   persistOrganizationContext(data)
   return true
 }
 
-/** Cambia la organización activa (desarrolladores o usuarios multi-org). */
 export async function switchOrganization(organizationId) {
-  const token = localStorage.getItem('access_token')
+  const token = getAccessToken()
   if (!token) throw new Error('Sesión no válida')
 
   const res = await fetch(`${API_URL}/api/auth/switch-organization`, {
@@ -520,14 +541,11 @@ export async function switchOrganization(organizationId) {
     const msg = body.message || body.detail || 'No se pudo cambiar de organización'
     throw new Error(typeof msg === 'string' ? msg : 'Error al cambiar organización')
   }
-  persistSession(body)
+  persistSession(body, isRememberMeEnabled())
   notifyOrganizationChanged(organizationId)
   return body
 }
 
-/**
- * Garantiza un access token válido si el refresh sigue vigente.
- */
 export async function tryRenewAccessToken() {
   if (isAccessTokenValid()) return true
   if (!isRefreshTokenValid()) return false
@@ -551,14 +569,12 @@ function sessionExpiredRedirect(reason) {
 }
 
 async function sessionTick() {
-  if (localStorage.getItem('isAuthenticated') !== 'true') {
+  if (getAuthItem('isAuthenticated') !== 'true') {
     return
   }
 
-  const role = localStorage.getItem('userRole') || ''
   const idleMs = Date.now() - lastActivityAt
-
-  if (isAdminRole(role) && idleMs >= IDLE_TIMEOUT_MS) {
+  if (idleMs >= IDLE_TIMEOUT_MS) {
     sessionExpiredRedirect('idle')
     return
   }
@@ -570,7 +586,7 @@ async function sessionTick() {
     return
   }
 
-  const accessExp = getJwtExpMs(localStorage.getItem('access_token') || '')
+  const accessExp = getJwtExpMs(getAuthItem('access_token') || '')
   const needsRenew =
     !accessExp || accessExp <= Date.now() + ACCESS_RENEW_MARGIN_MS
 
@@ -608,3 +624,5 @@ export function stopSessionIdleWatcher() {
   }
   routerRef = null
 }
+
+export { getAccessToken, getAuthItem, getSessionRole } from './authStorage.js'

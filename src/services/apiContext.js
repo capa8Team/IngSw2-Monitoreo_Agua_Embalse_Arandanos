@@ -2,9 +2,11 @@
  * Headers de autenticación y organización activa para llamadas a la API.
  */
 
+import { getAccessToken, getAuthItem, setAuthItem } from './authStorage.js'
+
 export function getStoredOrganizations() {
   try {
-    const raw = localStorage.getItem('userOrganizations')
+    const raw = getAuthItem('userOrganizations')
     if (!raw) return []
     const parsed = JSON.parse(raw)
     return Array.isArray(parsed) ? parsed : []
@@ -26,30 +28,30 @@ function parseJwtPayload(token) {
   }
 }
 
-/** Alinea localStorage con organization_id / organizations del JWT de acceso. */
+/** Alinea almacenamiento de sesión con organization_id / organizations del JWT de acceso. */
 export function syncOrganizationContextFromAccessToken() {
-  const payload = parseJwtPayload(localStorage.getItem('access_token'))
+  const payload = parseJwtPayload(getAccessToken())
   if (!payload) return
 
   const orgs = Array.isArray(payload.organizations) ? payload.organizations : []
   if (orgs.length) {
-    localStorage.setItem('userOrganizations', JSON.stringify(orgs))
+    setAuthItem('userOrganizations', JSON.stringify(orgs))
   }
 
   const tokenOrgId = payload.organization_id
   if (tokenOrgId && orgs.some((o) => o.id === tokenOrgId)) {
-    localStorage.setItem('activeOrganizationId', tokenOrgId)
+    setAuthItem('activeOrganizationId', tokenOrgId)
     return
   }
   if (orgs[0]?.id) {
-    localStorage.setItem('activeOrganizationId', orgs[0].id)
+    setAuthItem('activeOrganizationId', orgs[0].id)
   }
 }
 
 /** Organización activa del dashboard (validada contra las orgs de la sesión). */
 export function getActiveOrganizationId() {
   const orgs = getStoredOrganizations()
-  const stored = localStorage.getItem('activeOrganizationId')
+  const stored = getAuthItem('activeOrganizationId')
   if (stored && orgs.some((o) => o.id === stored)) return stored
   if (orgs.length > 0) return orgs[0].id
   return ''
@@ -67,7 +69,7 @@ export function getApiAuthHeaders(extra = {}) {
     Accept: 'application/json',
     ...extra,
   }
-  const token = localStorage.getItem('access_token')
+  const token = getAccessToken()
   if (token) {
     headers.Authorization = `Bearer ${token}`
   }

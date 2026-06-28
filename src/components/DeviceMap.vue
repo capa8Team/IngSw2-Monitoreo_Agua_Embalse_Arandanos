@@ -27,22 +27,29 @@ let markerLayer = null
 
 const markers = ref([])
 
-const popupHtml = (marker) => {
+const buildMarkerDetailHtml = (marker, { compact = false } = {}) => {
   const deviceList = marker.devices
     .map((d) => `<li>${d.name}</li>`)
     .join('')
   const countLabel = marker.deviceCount > 1
     ? `${marker.deviceCount} dispositivos`
     : '1 dispositivo'
+  const locationHtml = marker.locationLabel
+    ? `<p class="map-popup-location">${marker.locationLabel}</p>`
+    : ''
+  const titleHtml = compact ? '' : `<strong>${marker.name}</strong>`
   return `
-    <div class="map-popup">
-      <strong>${marker.name}</strong>
+    <div class="map-popup${compact ? ' map-popup--compact' : ''}">
+      ${titleHtml}
       <p>${countLabel}</p>
-      ${marker.locationLabel ? `<p class="map-popup-location">${marker.locationLabel}</p>` : ''}
+      ${locationHtml}
       <ul>${deviceList}</ul>
     </div>
   `
 }
+
+const popupHtml = (marker) => buildMarkerDetailHtml(marker)
+const tooltipHtml = (marker) => buildMarkerDetailHtml(marker, { compact: true })
 
 const renderMarkers = () => {
   if (!mapInstance || !markerLayer) return
@@ -56,6 +63,13 @@ const renderMarkers = () => {
     bounds.push(latLng)
     const icon = createRedMarkerIcon(marker.deviceCount)
     const leafletMarker = L.marker(latLng, { icon })
+    leafletMarker.bindTooltip(tooltipHtml(marker), {
+      direction: 'top',
+      offset: [0, -16],
+      opacity: 0.97,
+      className: 'device-map-tooltip',
+      sticky: true,
+    })
     leafletMarker.bindPopup(popupHtml(marker))
     leafletMarker.on('click', () => {
       if (marker.type === 'group') {
@@ -176,6 +190,47 @@ watch(
   margin: 4px 0 0;
   color: #666;
   font-size: 12px;
+}
+
+:deep(.device-map-tooltip) {
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid #d0d0d0;
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  padding: 0;
+  color: #1f2937;
+}
+
+:deep(.device-map-tooltip .leaflet-tooltip-content) {
+  margin: 0;
+}
+
+:deep(.map-popup--compact) {
+  padding: 8px 10px;
+  min-width: 140px;
+}
+
+:deep(.map-popup--compact p) {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+}
+
+:deep(.map-popup--compact ul) {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  font-size: 12px;
+}
+
+html[data-theme='dark'] :deep(.device-map-tooltip) {
+  background: rgba(38, 42, 54, 0.97);
+  border-color: #4a5064;
+  color: #e2e8f0;
+}
+
+html[data-theme='dark'] :deep(.map-popup--compact p) {
+  color: #e2e8f0;
 }
 
 html[data-theme='dark'] .device-map-wrapper {

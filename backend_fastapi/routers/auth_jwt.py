@@ -35,6 +35,13 @@ from services.user_password_setup import (
     get_must_set_password,
     set_must_set_password,
 )
+from services.redis_cache import (
+    TTL_ORG_USERS,
+    cache_aside,
+    invalidate_account_activity,
+    invalidate_organization_users,
+    org_users_key,
+)
 
 try:
     from core.log_origins import LogLevel
@@ -254,6 +261,7 @@ def _issue_tokens_for_auth_user(*, email: str, user_id: str) -> dict:
                 "organization_id": active_org_id,
             },
         )
+    invalidate_account_activity(str(active_org_id) if active_org_id else None)
     access_token, access_expires = create_access_token(
         email=email,
         role=role,
@@ -297,6 +305,7 @@ def login_with_supabase_session(body: SupabaseSessionBody):
                 component="auth.jwt",
                 details={"event": "login_failed", "user_email": email, "source": "supabase_token"},
             )
+        invalidate_account_activity()
         raise HTTPException(status_code=401, detail="Sesión de Supabase inválida o expirada")
 
     token_email = (auth_user.get("email") or "").lower()
@@ -343,6 +352,15 @@ def admin_list_organization_users(
             detail="No tienes permisos de administrador en esa organización",
         )
 
+    users = cache_aside(
+        org_users_key(organization_id),
+        TTL_ORG_USERS,
+        lambda: _load_organization_users(organization_id),
+    )
+    return users
+
+
+def _load_organization_users(organization_id: str) -> dict:
     users = list_organization_auth_users(organization_id)
     verified_count = sum(1 for u in users if u.get("is_verified"))
     org = get_organization_by_id(organization_id)
@@ -391,6 +409,7 @@ def admin_assign_user_organization(
     )
     if not ok:
         raise HTTPException(status_code=400, detail=err or "No se pudo asignar la organización")
+    invalidate_organization_users(organization_id)
     return {"success": True, "user_id": body.user_id, "organization_id": organization_id}
 
 
@@ -451,6 +470,7 @@ def login(body: LoginBody):
                     component="auth.jwt",
                     details={"event": "login_failed", "user_email": email, "source": "supabase"},
                 )
+            invalidate_account_activity()
             raise HTTPException(status_code=401, detail=auth_error or "Credenciales inválidas")
         return _issue_tokens_for_auth_user(email=email, user_id=auth_user["id"])
     if body.password == AUTH_DEMO_PASSWORD:
@@ -462,6 +482,7 @@ def login(body: LoginBody):
             component="auth.jwt",
             details={"event": "login_failed", "user_email": email, "source": "demo"},
         )
+    invalidate_account_activity()
     raise HTTPException(status_code=401, detail="Credenciales inválidas")
 
 

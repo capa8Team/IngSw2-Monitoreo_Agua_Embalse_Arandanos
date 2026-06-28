@@ -10,6 +10,17 @@ from services.mongodb import (
     delete_device, register_new_microcontroller, get_device_by_arduino_id,
     update_device_status
 )
+from services.redis_cache import (
+    TTL_DEVICES_LIST,
+    TTL_WEATHER,
+    cache_aside,
+    devices_list_key,
+    invalidate_devices,
+    invalidate_weather_city,
+    invalidate_weather_device,
+    weather_city_key,
+    weather_device_key,
+)
 from services.openweather import get_weather_data
 from core.log_service import log_service
 from core.log_origins import LogLevel, LogOrigin
@@ -27,7 +38,11 @@ def list_devices(
     """
     Obtiene la lista de dispositivos registrados, filtrados por organización activa.
     """
-    devices = get_all_devices(active_only=active_only, org_filter=tenant.device_filter())
+    devices = cache_aside(
+        devices_list_key(tenant.organization_id, tenant.organization_slug, active_only),
+        TTL_DEVICES_LIST,
+        lambda: get_all_devices(active_only=active_only, org_filter=tenant.device_filter()),
+    )
     
     if not devices:
         log_service.log(
@@ -75,6 +90,7 @@ async def create_new_device(
         }
     )
     
+    invalidate_devices(tenant.organization_id, tenant.organization_slug)
     return DeviceResponse(**device)
 
 
@@ -113,6 +129,7 @@ async def detect_microcontroller(
         details={"device_type": payload.device_type, "organization_id": tenant.organization_id}
     )
 
+    invalidate_devices(tenant.organization_id, tenant.organization_slug)
     return DeviceResponse(**device)
 
 
@@ -192,12 +209,22 @@ async def update_device_info(
     if not device:
         raise HTTPException(status_code=404, detail="Dispositivo no encontrado")
     
+    if payload.city is not None or payload.location is not None:
+        old_city = (existing.get("city") or existing.get("location") or "").strip()
+        new_city = (payload.city or payload.location or existing.get("city") or existing.get("location") or "").strip()
+        if old_city:
+            invalidate_weather_city(old_city)
+        if new_city and new_city != old_city:
+            invalidate_weather_city(new_city)
+        invalidate_weather_device(tenant.organization_id, tenant.organization_slug, device_id)
+    
     log_service.log(
         LogOrigin.DASHBOARD, LogLevel.INFO,
         f"Dispositivo actualizado: {device_id}",
         component="api.devices", operation="update"
     )
     
+    invalidate_devices(tenant.organization_id, tenant.organization_slug)
     return DeviceResponse(**device)
 
 
@@ -220,6 +247,7 @@ async def delete_device_endpoint(
         f"Dispositivo eliminado: {device_id}",
         component="api.devices", operation="delete"
     )
+    invalidate_devices(tenant.organization_id, tenant.organization_slug)
 
 
 @router.post("/{device_id}/status")
@@ -261,23 +289,29 @@ async def get_device_weather(
             status_code=400,
             detail="El dispositivo no tiene ciudad configurada. Agregue una ciudad en la sección de clima."
         )
-    
-    weather_data = get_weather_data(city)
-    
-    if not weather_data:
+
+    cache_key = weather_device_key(tenant.organization_id, tenant.organization_slug, device_id)
+
+    def loader():
+        weather_data = get_weather_data(city)
+        if not weather_data:
+            return None
+        return {
+            "device_id": device_id,
+            "device_name": device.get("name"),
+            "city": city,
+            "weather": weather_data,
+        }
+
+    cached = cache_aside(cache_key, TTL_WEATHER, loader)
+    if not cached:
         raise HTTPException(
             status_code=500,
             detail=f"No se pudo obtener datos de clima para la ciudad: {city}"
         )
-    
+
     logger.info(f"Datos de clima obtenidos para dispositivo {device_id} (ciudad: {city})")
-    
-    return {
-        "device_id": device_id,
-        "device_name": device.get("name"),
-        "city": city,
-        "weather": weather_data
-    }
+    return cached
 
 
 @router.get("/weather/{city}")
@@ -288,18 +322,25 @@ async def get_weather_by_city(
     """Obtiene el clima actual para una ciudad específica desde OpenWeather."""
     if not city or not city.strip():
         raise HTTPException(status_code=400, detail="Nombre de ciudad no válido")
-    
-    weather_data = get_weather_data(city)
-    
-    if not weather_data:
+
+    normalized_city = city.strip()
+    cache_key = weather_city_key(normalized_city)
+
+    def loader():
+        weather_data = get_weather_data(normalized_city)
+        if not weather_data:
+            return None
+        return {
+            "city": normalized_city,
+            "weather": weather_data,
+        }
+
+    cached = cache_aside(cache_key, TTL_WEATHER, loader)
+    if not cached:
         raise HTTPException(
             status_code=404,
-            detail=f"No se pudo obtener datos de clima para la ciudad: {city}. Verifique el nombre y que OpenWeather esté configurado."
+            detail=f"No se pudo obtener datos de clima para la ciudad: {normalized_city}. Verifique el nombre y que OpenWeather esté configurado."
         )
-    
-    logger.info(f"Datos de clima obtenidos para la ciudad: {city}")
-    
-    return {
-        "city": city,
-        "weather": weather_data
-    }
+
+    logger.info(f"Datos de clima obtenidos para la ciudad: {normalized_city}")
+    return cached

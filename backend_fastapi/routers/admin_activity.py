@@ -18,6 +18,11 @@ from services.organization_service import (
     fetch_organization_member_emails,
     user_is_org_admin,
 )
+from services.redis_cache import (
+    TTL_ACCOUNT_ACTIVITY,
+    account_activity_key,
+    cache_aside,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +155,9 @@ def list_user_activity(
 
     since = datetime.now(timezone.utc) - timedelta(days=days)
 
-    try:
+    cache_key = account_activity_key(organization_id, days, limit)
+
+    def loader():
         rows = (
             db.query(LoginLogDB)
             .filter(LoginLogDB.created_at >= since)
@@ -162,6 +169,9 @@ def list_user_activity(
         result = _aggregate_activity(scoped_rows, days=days)
         result["organization_id"] = organization_id
         return result
+
+    try:
+        return cache_aside(cache_key, TTL_ACCOUNT_ACTIVITY, loader)
     except OperationalError as exc:
         logger.error("Conexión a Supabase Postgres fallida: %s", exc)
         if is_ipv6_unreachable_error(exc):

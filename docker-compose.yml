@@ -32,6 +32,22 @@ services:
     networks:
       - arandanos-network
 
+  redis:
+    image: redis:7.4-alpine
+    container_name: redis-arandanos
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - arandanos-network
+
   backend:
     build:
       context: ./backend_fastapi
@@ -74,6 +90,7 @@ services:
       AWS_IOT_CA_PATH: ${AWS_IOT_CA_PATH:-/app/iot-certs/AmazonRootCA1.pem}
       AWS_IOT_DEFAULT_DEVICE_ID: ${AWS_IOT_DEFAULT_DEVICE_ID:-boya}
       OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     volumes:
       - ${AWS_IOT_CERTS_DIR:-./IotCore}:/app/iot-certs:ro
     ports:
@@ -86,6 +103,8 @@ services:
       start_period: 30s
     depends_on:
       mongodb:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - arandanos-network

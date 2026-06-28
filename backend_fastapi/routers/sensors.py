@@ -13,6 +13,16 @@ from services.mongodb import (
     get_latest_sensor_reading,
     query_sensor_readings,
 )
+from services.redis_cache import (
+    TTL_SENSOR_HISTORY,
+    TTL_SENSOR_HISTORY_SHORT,
+    TTL_SENSOR_LATEST,
+    TTL_HISTORICAL_TABLE,
+    cache_aside,
+    historical_table_key,
+    sensor_history_key,
+    sensor_latest_key,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +53,14 @@ def get_latest_reading(
     """Última lectura almacenada del tenant (origen MQTT / MongoDB)."""
     _validate_arduino_for_tenant(arduino_id, tenant)
     _, readings_filter = _tenant_filters(tenant)
-    reading = get_latest_sensor_reading(arduino_id, tenant_filter=readings_filter)
-    return SensorDataResponse(**reading) if reading else None
+    cache_key = sensor_latest_key(tenant.organization_id, tenant.organization_slug, arduino_id)
+
+    def loader():
+        reading = get_latest_sensor_reading(arduino_id, tenant_filter=readings_filter)
+        return SensorDataResponse(**reading).model_dump(mode="json") if reading else None
+
+    cached = cache_aside(cache_key, TTL_SENSOR_LATEST, loader)
+    return SensorDataResponse(**cached) if cached else None
 
 
 @router.get("/history", response_model=list[SensorDataResponse])
@@ -56,12 +72,26 @@ def get_readings_history(
     """Historial reciente del tenant (compatibilidad con clientes anteriores)."""
     _validate_arduino_for_tenant(arduino_id, tenant)
     _, readings_filter = _tenant_filters(tenant)
-    readings = query_sensor_readings(
-        limit=limit,
+    cache_key = sensor_history_key(
+        tenant.organization_id,
+        tenant.organization_slug,
         arduino_id=arduino_id,
-        tenant_filter=readings_filter,
+        since=None,
+        until=None,
+        days=None,
+        limit=limit,
     )
-    return [SensorDataResponse(**r) for r in readings]
+
+    def loader():
+        readings = query_sensor_readings(
+            limit=limit,
+            arduino_id=arduino_id,
+            tenant_filter=readings_filter,
+        )
+        return [SensorDataResponse(**r).model_dump(mode="json") for r in readings]
+
+    cached = cache_aside(cache_key, TTL_SENSOR_HISTORY_SHORT, loader)
+    return [SensorDataResponse(**r) for r in (cached or [])]
 
 
 @router.get("/history/range", response_model=list[SensorDataResponse])
@@ -82,14 +112,30 @@ def get_readings_in_range(
         effective_since = datetime.now(timezone.utc) - timedelta(days=7)
 
     _, readings_filter = _tenant_filters(tenant)
-    readings = query_sensor_readings(
-        since=effective_since,
-        until=until,
+    since_iso = effective_since.isoformat() if effective_since else None
+    until_iso = until.isoformat() if until else None
+    cache_key = sensor_history_key(
+        tenant.organization_id,
+        tenant.organization_slug,
         arduino_id=arduino_id,
+        since=since_iso,
+        until=until_iso,
+        days=days,
         limit=limit,
-        tenant_filter=readings_filter,
     )
-    return [SensorDataResponse(**r) for r in readings]
+
+    def loader():
+        readings = query_sensor_readings(
+            since=effective_since,
+            until=until,
+            arduino_id=arduino_id,
+            limit=limit,
+            tenant_filter=readings_filter,
+        )
+        return [SensorDataResponse(**r).model_dump(mode="json") for r in readings]
+
+    cached = cache_aside(cache_key, TTL_SENSOR_HISTORY, loader)
+    return [SensorDataResponse(**r) for r in (cached or [])]
 
 
 @router.get("/history/table", response_model=HistoricalTableResponse)
@@ -111,15 +157,33 @@ def get_historical_table(
 ):
     """Filas paginadas para la tabla de mediciones históricas del tenant."""
     org_filter, readings_filter = _tenant_filters(tenant)
-    payload = get_historical_table_page(
+    since_iso = since.isoformat() if since else None
+    date_from_iso = date_from.isoformat() if date_from else None
+    date_to_iso = date_to.isoformat() if date_to else None
+    cache_key = historical_table_key(
+        tenant.organization_id,
+        tenant.organization_slug,
         page=page,
         page_size=page_size,
         sensor=sensor,
-        date_from=date_from,
-        date_to=date_to,
+        date_from=date_from_iso,
+        date_to=date_to_iso,
         live=live,
-        since=since,
-        org_filter=org_filter,
-        readings_filter=readings_filter,
+        since=since_iso,
     )
+
+    def loader():
+        return get_historical_table_page(
+            page=page,
+            page_size=page_size,
+            sensor=sensor,
+            date_from=date_from,
+            date_to=date_to,
+            live=live,
+            since=since,
+            org_filter=org_filter,
+            readings_filter=readings_filter,
+        )
+
+    payload = cache_aside(cache_key, TTL_HISTORICAL_TABLE, loader) or {}
     return HistoricalTableResponse(**payload)

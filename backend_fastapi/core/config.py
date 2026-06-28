@@ -102,6 +102,11 @@ class Settings(BaseSettings):
     # ========================================================================
     OPENWEATHER_API_KEY: str | None = None
 
+    # ========================================================================
+    # REDIS (caché cache-aside)
+    # ========================================================================
+    REDIS_URL: str | None = None
+
     @property
     def openweather_api_key(self) -> str | None:
         """Obtiene la clave de API de OpenWeather desde variables de entorno."""

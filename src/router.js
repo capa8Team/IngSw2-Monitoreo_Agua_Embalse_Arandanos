@@ -3,6 +3,8 @@ import {
   hasValidSessionToken,
   tryRenewAccessToken,
   clearSession,
+  sanitizeSessionState,
+  getSessionRole,
 } from './services/sessionAuth.js'
 import { syncOrganizationContextFromAccessToken } from './services/apiContext.js'
 
@@ -13,7 +15,8 @@ const DeviceDashboard = () => import('./components/DeviceDashboard.vue')
 const routes = [
   {
     path: '/',
-    redirect: '/dashboard'
+    name: 'Root',
+    redirect: '/login',
   },
   {
     path: '/login',
@@ -48,6 +51,20 @@ router.beforeEach(async (to, from, next) => {
     ? `${to.meta.title} - Monitoreo Embalse`
     : 'Monitoreo Embalse'
 
+  sanitizeSessionState()
+
+  if (to.path === '/' || to.name === 'Root') {
+    if (hasValidSessionToken()) {
+      const renewed = await tryRenewAccessToken()
+      next(renewed ? '/dashboard' : '/login')
+      if (!renewed) clearSession()
+      return
+    }
+    clearSession()
+    next('/login')
+    return
+  }
+
   if (to.path === '/login') {
     if (hasValidSessionToken()) {
       const renewed = await tryRenewAccessToken()
@@ -80,7 +97,7 @@ router.beforeEach(async (to, from, next) => {
   syncOrganizationContextFromAccessToken()
 
   if (to.meta.roles && to.meta.roles.length > 0) {
-    const userRole = localStorage.getItem('userRole')
+    const userRole = getSessionRole()
     if (!userRole || !to.meta.roles.includes(userRole)) {
       console.warn(`Acceso denegado: rol requerido ${to.meta.roles.join(', ')}, rol actual: ${userRole}`)
       next('/dashboard')

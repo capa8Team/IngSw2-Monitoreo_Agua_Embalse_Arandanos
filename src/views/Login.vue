@@ -32,6 +32,18 @@
           />
         </div>
 
+        <div class="form-group remember-group">
+          <label class="remember-label">
+            <input
+              v-model="rememberMe"
+              type="checkbox"
+              id="remember-me"
+            />
+            <span>Recordarme en este equipo</span>
+          </label>
+          <p class="remember-hint">Si no marcas esta opción, la sesión se cerrará al cerrar el navegador.</p>
+        </div>
+
         <div v-if="error" class="error-message">
           {{ error }}
         </div>
@@ -117,6 +129,7 @@ const setupForm = ref({
 
 const error = ref('')
 const isLoading = ref(false)
+const rememberMe = ref(false)
 function resetSetupForm() {
   setupForm.value = { password: '', confirmPassword: '' }
 }
@@ -137,7 +150,7 @@ async function finishSession(data) {
   if (!data?.access_token) {
     throw new Error('No se recibió una sesión válida. Intenta iniciar sesión de nuevo.')
   }
-  persistSession(data)
+  persistSession(data, rememberMe.value)
   startSessionIdleWatcher(router)
   mode.value = 'login'
   deviceStore.prefetchDevicesForActiveOrg()
@@ -210,6 +223,8 @@ const handleSetPassword = async () => {
   box-sizing: border-box;
   background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .login-theme-corner {
@@ -227,6 +242,7 @@ const handleSetPassword = async () => {
   padding: 40px;
   width: 100%;
   max-width: 400px;
+  flex-shrink: 0;
 }
 
 .login-header {
@@ -265,23 +281,24 @@ const handleSetPassword = async () => {
   font-size: 14px;
 }
 
-.form-group input {
+.form-group input:not([type='checkbox']) {
   padding: 12px;
-  border: 1px solid #e8e8e8;
+  border: 2px solid #e8e8e8;
   border-radius: 6px;
   font-size: 16px;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
-  transition: border-color 0.3s, box-shadow 0.3s;
+  transition: border-color 0.2s ease, outline-color 0.2s ease;
   background-color: #ffffff;
   color: #333333;
 }
 
-.form-group input:focus {
-  outline: none;
+.form-group input:not([type='checkbox']):focus {
+  outline: 2px solid rgba(102, 187, 106, 0.45);
+  outline-offset: 0;
   border-color: #66bb6a;
-  box-shadow: 0 0 0 3px rgba(102, 187, 106, 0.1);
+  box-shadow: none;
 }
 
 .setup-intro {
@@ -290,6 +307,48 @@ const handleSetPassword = async () => {
   color: #555555;
   line-height: 1.5;
   text-align: center;
+}
+
+.remember-group {
+  gap: 6px;
+}
+
+.remember-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 500;
+  color: #444444;
+  font-size: 14px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.remember-label input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  min-height: 16px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  outline: none;
+  flex-shrink: 0;
+  accent-color: #66bb6a;
+  cursor: pointer;
+}
+
+.remember-label input[type='checkbox']:focus {
+  outline: 2px solid rgba(102, 187, 106, 0.45);
+  outline-offset: 2px;
+}
+
+.remember-hint {
+  margin: 0;
+  font-size: 12px;
+  color: #888888;
+  line-height: 1.4;
 }
 
 .error-message {

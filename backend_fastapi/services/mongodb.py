@@ -215,6 +215,16 @@ def save_sensor_payload_to_mongodb(payload: SensorMongoPayload, source: str = "a
 
         result = collection.insert_one(document)
         logger.info("Lectura guardada en MongoDB con ID: %s (origen: %s)", result.inserted_id, source)
+        try:
+            from services.redis_cache import invalidate_sensor_readings
+
+            invalidate_sensor_readings(
+                org_fields.get("organization_id"),
+                org_fields.get("organization_slug"),
+                payload.arduino_id,
+            )
+        except Exception as cache_exc:
+            logger.warning("No se pudo invalidar caché Redis: %s", cache_exc)
         return str(result.inserted_id)
     except Exception as e:
         logger.error("Error guardando en MongoDB: %s", e)

@@ -9,6 +9,7 @@ import {
   assignUserToOrganizationAdmin,
   markPasswordSetupRequired,
 } from './sessionAuth.js'
+import { getSessionRole } from './authStorage.js'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -736,7 +737,7 @@ export async function getCurrentUser() {
       // Usar localStorage como fallback
       userRole = {
         id: data.user.id,
-        role: localStorage.getItem('userRole') || 'employee',
+        role: getSessionRole() || 'employee',
         full_name: localStorage.getItem('userFullName') || data.user.email
       }
     }
@@ -745,7 +746,7 @@ export async function getCurrentUser() {
       id: data.user.id,
       email: data.user.email,
       ...(userRole || {
-        role: localStorage.getItem('userRole') || 'employee',
+        role: getSessionRole() || 'employee',
         full_name: localStorage.getItem('userFullName') || data.user.email
       })
     }

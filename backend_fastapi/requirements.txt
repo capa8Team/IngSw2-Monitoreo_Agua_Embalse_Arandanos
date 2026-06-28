@@ -12,3 +12,4 @@ sqlalchemy==2.0.23
 psycopg2-binary==2.9.9
 awsiotsdk==1.22.0
 awscrt==0.21.1
+redis==5.2.1

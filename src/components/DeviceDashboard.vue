@@ -446,7 +446,7 @@
                   <strong class="pending-count">{{ supabaseUsersPending }}</strong> pendientes
                 </p>
               </div>
-              <button class="refresh-users-btn" @click="loadExistingUsers" :disabled="isLoadingUsers">
+              <button class="refresh-users-btn" @click="refreshUsersList" :disabled="isLoadingUsers">
                 {{ isLoadingUsers ? '⟳ Cargando...' : '↻ Actualizar' }}
               </button>
             </div>
@@ -574,7 +574,7 @@
                 <option :value="90">90 días</option>
               </select>
             </label>
-            <button class="refresh-users-btn" @click="loadAccountsActivity" :disabled="isLoadingActivity">
+            <button class="refresh-users-btn" @click="refreshAccountsActivity" :disabled="isLoadingActivity">
               {{ isLoadingActivity ? '⟳ Cargando...' : '↻ Actualizar' }}
             </button>
           </div>
@@ -662,8 +662,19 @@ import {
   isAdminRole,
   ADMIN_ONLY_VIEWS,
   fetchOrganizationUsersForAdmin,
+  getSessionRole,
 } from '../services/sessionAuth.js'
 import { fetchAccountsActivity } from '../services/adminActivityService.js'
+import {
+  invalidateOrgUsersCache,
+  readOrgUsersCache,
+  writeOrgUsersCache,
+} from '../services/adminUsersCache.js'
+import {
+  invalidateAccountsActivityCache,
+  readAccountsActivityCache,
+  writeAccountsActivityCache,
+} from '../services/adminActivityCache.js'
 import {
   getActiveOrganizationName,
   getApiAuthHeaders,
@@ -787,10 +798,10 @@ const devicesSectionRef = ref(null)
 const lastSync = ref('Sin datos del Arduino')
 const showAllTodayAlerts = ref(false)
 
-const sessionRole = ref(localStorage.getItem('userRole') || '')
+const sessionRole = ref(getSessionRole())
 
 const refreshSessionRole = () => {
-  sessionRole.value = localStorage.getItem('userRole') || ''
+  sessionRole.value = getSessionRole()
 }
 
 const isAdmin = computed(() => isAdminRole(sessionRole.value))
@@ -1257,8 +1268,16 @@ const refreshSupabaseSessionState = async () => {
 const openUserManagementView = async () => {
   if (!isAdmin.value) return
   currentView.value = 'admin-users'
+
+  const cached = readOrgUsersCache()
+  if (cached) {
+    applyUsersListResult(cached)
+  }
+
   const ready = await refreshSupabaseSessionState()
-  if (ready) await loadExistingUsers()
+  if (ready) {
+    await loadExistingUsers({ skipSupabaseCheck: true, silent: !!cached })
+  }
   startUsersAutoRefresh()
 }
 
@@ -1277,25 +1296,52 @@ const formatDateTimeMaybe = (value) => {
   return d.toLocaleString('es-ES')
 }
 
-const loadAccountsActivity = async () => {
+const loadAccountsActivity = async ({ silent = false, forceRefresh = false } = {}) => {
   if (!isAdmin.value) return
-  isLoadingActivity.value = true
+
+  const days = activityDays.value
+  const cached = !forceRefresh ? readAccountsActivityCache(days) : null
+  if (cached) {
+    applyAccountsActivityResult(cached)
+  }
+
+  if (!silent && !cached) {
+    isLoadingActivity.value = true
+  }
   activityError.value = ''
   try {
-    const data = await fetchAccountsActivity({ days: activityDays.value })
-    accountsActivity.value = Array.isArray(data?.items) ? data.items : []
+    const data = await fetchAccountsActivity({ days })
+    applyAccountsActivityResult(data)
+    writeAccountsActivityCache(data, days)
   } catch (e) {
     activityError.value = e?.message || 'No se pudo cargar la actividad'
-    accountsActivity.value = []
+    if (!accountsActivity.value.length) {
+      accountsActivity.value = []
+    }
   } finally {
     isLoadingActivity.value = false
   }
 }
 
+function applyAccountsActivityResult(data) {
+  accountsActivity.value = Array.isArray(data?.items) ? data.items : []
+}
+
+const refreshAccountsActivity = async () => {
+  invalidateAccountsActivityCache()
+  await loadAccountsActivity({ forceRefresh: true })
+}
+
 const openAccountActivityView = async () => {
   if (!isAdmin.value) return
   currentView.value = 'admin-activity'
-  await loadAccountsActivity()
+
+  const cached = readAccountsActivityCache(activityDays.value)
+  if (cached) {
+    applyAccountsActivityResult(cached)
+  }
+
+  await loadAccountsActivity({ silent: !!cached })
 }
 
 const goBack = () => {
@@ -1437,7 +1483,8 @@ const createNewUser = async () => {
         role: 'employee'
       }
 
-      await loadExistingUsers()
+      invalidateOrgUsersCache()
+      await loadExistingUsers({ skipSupabaseCheck: true })
       console.log('[createNewUser] ✅ Lista de usuarios refrescada')
     } else {
       userCreationError.value = result.error || 'Error al crear usuario'
@@ -1450,35 +1497,51 @@ const createNewUser = async () => {
   }
 }
 
-const loadExistingUsers = async () => {
-  isLoadingUsers.value = true
-  usersLoadError.value = ''
-  console.log('[loadExistingUsers] Iniciando carga...')
-  try {
+const loadExistingUsers = async ({ skipSupabaseCheck = false, silent = false } = {}) => {
+  if (!skipSupabaseCheck) {
     await refreshSupabaseSessionState()
+  }
+
+  if (!silent) {
+    isLoadingUsers.value = true
+  }
+  usersLoadError.value = ''
+  try {
     const result = await fetchOrganizationUsersForAdmin()
-    console.log('[loadExistingUsers] Resultado:', result)
-
-    if (Array.isArray(result.users)) {
-      existingUsers.value = result.users
-      supabaseUsersTotal.value = result.total ?? result.users.length
-      supabaseUsersVerified.value = result.verifiedCount ?? result.users.filter((u) => u.is_verified).length
-      supabaseUsersPending.value = result.pendingCount ?? supabaseUsersTotal.value - supabaseUsersVerified.value
-      usersListSource.value = result.source
-      usersLoadError.value = result.error || ''
-      userVerificationFilter.value = 'all'
-    }
-
-    if (!result.success && !result.users?.length) {
-      usersLoadError.value = result.error || usersLoadError.value
-      supabaseUsersTotal.value = 0
-      existingUsers.value = []
-    }
+    applyUsersListResult(result)
+    writeOrgUsersCache(result)
   } catch (error) {
     console.error('[loadExistingUsers] ❌ Error al cargar usuarios:', error)
     usersLoadError.value = error?.message || 'Error al cargar usuarios'
+    if (!existingUsers.value.length) {
+      supabaseUsersTotal.value = 0
+      existingUsers.value = []
+    }
   } finally {
     isLoadingUsers.value = false
+  }
+}
+
+const refreshUsersList = async () => {
+  invalidateOrgUsersCache()
+  await loadExistingUsers({ skipSupabaseCheck: true })
+}
+
+function applyUsersListResult(result) {
+  if (Array.isArray(result.users)) {
+    existingUsers.value = result.users
+    supabaseUsersTotal.value = result.total ?? result.users.length
+    supabaseUsersVerified.value = result.verifiedCount ?? result.users.filter((u) => u.is_verified).length
+    supabaseUsersPending.value = result.pendingCount ?? supabaseUsersTotal.value - supabaseUsersVerified.value
+    usersListSource.value = result.source
+    usersLoadError.value = result.error || ''
+    userVerificationFilter.value = 'all'
+  }
+
+  if (!result.success && !result.users?.length) {
+    usersLoadError.value = result.error || usersLoadError.value
+    supabaseUsersTotal.value = 0
+    existingUsers.value = []
   }
 }
 
@@ -1494,7 +1557,8 @@ const deleteUser = async (userId) => {
     if (result.success) {
       userCreationSuccess.value = `Cuenta ${label} eliminada correctamente.`
       userCreationError.value = ''
-      await loadExistingUsers()
+      invalidateOrgUsersCache()
+      await loadExistingUsers({ skipSupabaseCheck: true })
     } else {
       userCreationError.value = result.error || 'No se pudo eliminar el usuario'
       userCreationSuccess.value = ''
@@ -1519,7 +1583,7 @@ const startUsersAutoRefresh = () => {
   stopUsersAutoRefresh()
   usersRefreshInterval = setInterval(() => {
     if (currentView.value === 'admin-users' && !isLoadingUsers.value) {
-      loadExistingUsers()
+      loadExistingUsers({ skipSupabaseCheck: true, silent: true })
     }
   }, 45000)
 }
@@ -1563,6 +1627,15 @@ watch(currentView, (view) => {
   }
 })
 
+watch(activityDays, () => {
+  if (currentView.value !== 'admin-activity' || !isAdmin.value) return
+  const cached = readAccountsActivityCache(activityDays.value)
+  if (cached) {
+    applyAccountsActivityResult(cached)
+  }
+  void loadAccountsActivity({ silent: !!cached })
+})
+
 watch(
   () => ({ view: currentView.value, deviceId: selectedDeviceId.value }),
   async (current, previous) => {
@@ -1600,7 +1673,7 @@ onMounted(async () => {
   startSensorUpdates()
 
   if (isAdmin.value) {
-    void loadExistingUsers()
+    void loadExistingUsers({ skipSupabaseCheck: true, silent: true })
   }
 })
 

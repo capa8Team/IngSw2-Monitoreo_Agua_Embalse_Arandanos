@@ -30,6 +30,7 @@ from routers.device_groups import router as device_groups_router
 from services.telegram import initialize_telegram, TelegramService
 from services.aws_iot import aws_iot_service
 from services.openweather import init_openweather
+from services.redis_cache import close_redis, init_redis
 from routers.logs_router import router as logs_router
 from routers.auth_jwt import router as auth_jwt_router
 from routers.admin_activity import router as admin_activity_router
@@ -94,6 +95,11 @@ async def startup_event():
     logger.info("[START] Aplicacion iniciando...")
     setup_fallback_logging()
     log_service.log(LogOrigin.DASHBOARD, LogLevel.INFO, "Iniciando API", component="system.startup")
+
+    try:
+        init_redis(settings.REDIS_URL)
+    except Exception as e:
+        logger.error("[REDIS] Error al inicializar caché: %s", e)
     
     # Inicializar OpenWeather API
     try:
@@ -123,6 +129,7 @@ async def startup_event():
 async def shutdown_event():
     logger.info("[STOP] Aplicacion deteniendo...")
     aws_iot_service.stop()
+    close_redis()
 
 # Endpoints Base de Salud
 @app.get("/", tags=["Health"])

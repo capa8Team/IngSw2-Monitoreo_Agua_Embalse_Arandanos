@@ -7,6 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from core.tenant import TenantContext, ensure_device_in_tenant, get_tenant_context
 from models import DashboardResponse, SensorData, Metadata
 from services.mongodb import find_device_by_key, update_dashboard_state_from_mongodb
+from services.redis_cache import (
+    TTL_DASHBOARD,
+    cache_aside,
+    dashboard_key,
+)
 from core.log_service import log_service
 from core.log_origins import LogLevel, LogOrigin
 
@@ -50,12 +55,23 @@ def get_dashboard_data(
             raise HTTPException(status_code=403, detail="Dispositivo fuera de tu organización")
         ensure_device_in_tenant(device, tenant)
 
-    state = update_dashboard_state_from_mongodb(
-        arduino_id=arduino_id,
-        tenant_filter=tenant.readings_filter(),
+    state = cache_aside(
+        dashboard_key(tenant.organization_id, tenant.organization_slug, arduino_id),
+        TTL_DASHBOARD,
+        lambda: _load_dashboard_state(arduino_id, tenant.readings_filter()),
     )
     if state is None:
         logger.warning("No hay datos en la BD. Retornando estado vacío.")
         return _empty_dashboard()
     log_service.log(LogOrigin.DASHBOARD, LogLevel.INFO, "Dashboard data fetched", component="api.dashboard")
-    return state
+    return DashboardResponse(**state)
+
+
+def _load_dashboard_state(arduino_id: str | None, tenant_filter: dict) -> dict | None:
+    state = update_dashboard_state_from_mongodb(
+        arduino_id=arduino_id,
+        tenant_filter=tenant_filter,
+    )
+    if state is None:
+        return None
+    return state.model_dump(mode="json")

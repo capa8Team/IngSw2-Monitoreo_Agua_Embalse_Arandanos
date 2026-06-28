@@ -22,7 +22,11 @@
     </div>
 
     <!-- Sección de Clima -->
-    <div v-if="device.city" class="weather-section">
+    <div
+      v-if="device.city"
+      class="weather-section"
+      :class="{ 'weather-section--dark': isDark }"
+    >
       <div v-if="weatherLoading" class="weather-loading">
         <p>⏳ Cargando clima...</p>
       </div>
@@ -95,9 +99,10 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import BatteryIndicator from './BatteryIndicator.vue'
 import { getApiAuthHeaders } from '../services/apiContext.js'
+import { isDarkTheme } from '../services/themePreference.js'
 
 const props = defineProps({
   device: {
@@ -127,6 +132,20 @@ defineEmits(['select', 'delete', 'configure'])
 const weatherData = ref(null)
 const weatherLoading = ref(false)
 const weatherError = ref(false)
+const isDark = ref(false)
+
+function syncTheme() {
+  isDark.value = isDarkTheme()
+}
+
+onMounted(() => {
+  syncTheme()
+  window.addEventListener('embalse-theme-change', syncTheme)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('embalse-theme-change', syncTheme)
+})
 
 const formatSensorValue = (value) => {
   const parsed = Number(value)
@@ -429,6 +448,42 @@ watch(() => props.device?.city, () => {
   font-weight: 700;
 }
 
+/* Modo oscuro: clase en el componente (vence al scoped claro) */
+.weather-section.weather-section--dark {
+  background: linear-gradient(135deg, #1e3a5f 0%, #152238 100%);
+  border-left-color: #4ade80;
+}
+
+.weather-section--dark .weather-loading,
+.weather-section--dark .weather-error {
+  color: #94a3b8;
+}
+
+.weather-section--dark .weather-error {
+  color: #fca5a5;
+}
+
+.weather-section--dark .weather-temp {
+  color: #f1f5f9;
+}
+
+.weather-section--dark .weather-description {
+  color: #94a3b8;
+}
+
+.weather-section--dark .weather-detail-item {
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.weather-section--dark .detail-label {
+  color: #94a3b8;
+}
+
+.weather-section--dark .detail-value {
+  color: #e2e8f0;
+}
+
 .device-body {
   padding: 12px 0;
   border-top: 1px solid #f0f0f0;
@@ -529,62 +584,6 @@ watch(() => props.device?.city, () => {
 
   .sensor-value {
     font-size: 13px;
-  }
-}
-
-/* Dark Mode */
-@media (prefers-color-scheme: dark) {
-  .device-card {
-    background: #2a2a2a;
-    border-color: #444;
-  }
-
-  .device-card:hover {
-    border-color: #66bb6a;
-  }
-
-  .device-name {
-    color: #e0e0e0;
-  }
-
-  .device-model {
-    color: #aaa;
-  }
-
-  .sensor-item {
-    background: #3a3a3a;
-  }
-
-  .sensor-name {
-    color: #999;
-  }
-
-  .sensor-value {
-    color: #e0e0e0;
-  }
-
-  .weather-section {
-    background: linear-gradient(135deg, #1e6b8f 0%, #2a5a7a 100%);
-  }
-
-  .weather-temp {
-    color: #e0e0e0;
-  }
-
-  .weather-description {
-    color: #aaa;
-  }
-
-  .weather-detail-item {
-    background: rgba(0, 0, 0, 0.3);
-  }
-
-  .detail-label {
-    color: #aaa;
-  }
-
-  .detail-value {
-    color: #e0e0e0;
   }
 }
 
