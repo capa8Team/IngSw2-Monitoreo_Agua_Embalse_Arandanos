@@ -111,7 +111,10 @@ class Settings(BaseSettings):
     def openweather_api_key(self) -> str | None:
         """Obtiene la clave de API de OpenWeather desde variables de entorno."""
         return self.OPENWEATHER_API_KEY
-        """Convierte el string de correos separados por coma en una lista limpia"""
+
+    @property
+    def parsed_to_emails(self) -> List[str]:
+        """Convierte el string de correos separados por coma en una lista limpia."""
         if not self.MAILERSEND_TO_EMAILS:
             return []
         return list(dict.fromkeys(email.strip() for email in self.MAILERSEND_TO_EMAILS.split(",") if email.strip()))
